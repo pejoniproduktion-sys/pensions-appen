@@ -12,7 +12,6 @@ st.title("Din Pensions-Dashboard 💰")
 conn = st.connection("gsheets", type=GSheetsConnection)
 sheet_url = "https://docs.google.com/spreadsheets/d/1WI1KfXWkygOVdL8XxWiHprzNyCax0cIowxzthBta_3I/edit?gid=0#gid=0"
 
-# Läs enbart in inställningarna högst upp i arket (Vi ignorerar numera allt under rad 15)
 df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=14, header=None)
 
 def get_setting_val(row_index, col_index=1):
@@ -28,7 +27,6 @@ def get_setting_val(row_index, col_index=1):
 aktuell_alder = int(get_setting_val(1)) if get_setting_val(1) > 0 else 50
 forvantad_avkastning_procent = get_setting_val(4) * 100 if get_setting_val(4) < 1 else get_setting_val(4)
 
-# Läs in startvärden från inställningarna
 allman_start = get_setting_val(1, 4) if get_setting_val(1, 4) > 0 else 2361985
 kpa_start = get_setting_val(2, 4) if get_setting_val(2, 4) > 0 else 36210
 futur_start = get_setting_val(3, 4) if get_setting_val(3, 4) > 0 else 9454
@@ -49,6 +47,11 @@ st.sidebar.header("⚙️ Dina val")
 pensionsalder = st.sidebar.slider("Ditt standardmål för pension?", min_value=55, max_value=75, value=65)
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("Unika Tillväxträntor")
+ranta_bolag = st.sidebar.slider("Bolagets Kassa (Årlig tillväxt %)", 0.0, 10.0, 2.0, 0.5)
+ranta_allman = st.sidebar.slider("Allmän Pension (Inkomstbasbelopp %)", 0.0, 10.0, 3.0, 0.5)
+
+st.sidebar.markdown("---")
 st.sidebar.subheader("Skatt & Uttag")
 skatte_läge = st.sidebar.radio("Visa värden som:", ["Brutto (Före skatt)", "Netto (I plånboken)"])
 
@@ -62,13 +65,15 @@ if simulera_inflation:
 pott_lista = ['ISK Värde', 'Bolagets Kassa Värde', 'Aktiekonto Värde', 'Allmän Pension Värde', 'Tjänstepension Värde', 'Pensionsförsäkring Värde', 'IPS Värde', 'KPA Traditionell Värde', 'Futur Pension Värde']
 pott_namn_ren = ['ISK', 'Bolagets Kassa', 'Aktiekonto', 'Allmän Pension', 'Tjänstepension', 'Pensionsförsäkring', 'IPS', 'KPA Traditionell', 'Futur Pension']
 
-# --- BYGG UPP FRAMTIDSPROGNOSEN FÖR DASHBOARD (TIDIGARE EXCEL-RADER) ---
+# --- BYGG UPP FRAMTIDSPROGNOSEN FÖR DASHBOARD ---
 aldrar_t1 = list(range(aktuell_alder, 91))
 t1_isk, t1_tjp, t1_aktie, t1_ips, t1_pf = [s_isk_start], [s_tjp_start], [s_aktie_start], [s_ips_start], [s_pf_start]
 t1_allm, t1_kpa, t1_futur = [allman_start], [kpa_start], [futur_start]
 t1_bolag = [bolagets_kassa_start]
 
 avk_faktor_t1 = 1 + (forvantad_avkastning_procent / 100)
+avk_faktor_bolag = 1 + (ranta_bolag / 100)
+avk_faktor_allman = 1 + (ranta_allman / 100)
 
 for i in range(1, len(aldrar_t1)):
     age = aldrar_t1[i]
@@ -80,10 +85,12 @@ for i in range(1, len(aldrar_t1)):
     t1_aktie.append(t1_aktie[-1] * avk_faktor_t1)
     t1_ips.append(t1_ips[-1] * avk_faktor_t1)
     t1_pf.append(t1_pf[-1] * avk_faktor_t1)
-    t1_allm.append(t1_allm[-1] * avk_faktor_t1)
     t1_kpa.append(t1_kpa[-1] * avk_faktor_t1)
     t1_futur.append(t1_futur[-1] * avk_faktor_t1)
-    t1_bolag.append(t1_bolag[-1] * avk_faktor_t1)
+    
+    # Unika räntor för Bolag och Allmän
+    t1_allm.append(t1_allm[-1] * avk_faktor_allman)
+    t1_bolag.append(t1_bolag[-1] * avk_faktor_bolag)
 
 df = pd.DataFrame({
     'Ålder': aldrar_t1,
@@ -269,16 +276,21 @@ with tab2:
     pre_isk, pre_tjp, pre_aktie, pre_ips, pre_pf = s_isk_start, s_tjp_start, s_aktie_start, s_ips_start, s_pf_start
     pre_allm, pre_kpa, pre_futur = allman_start, kpa_start, futur_start
     pre_bolag = bolagets_kassa_start
+    pre_k10 = bolagets_k10_start
+    
     avk_faktor = 1 + (sim_avkastning / 100)
+    avk_f_bolag = 1 + (ranta_bolag / 100)
+    avk_f_allman = 1 + (ranta_allman / 100)
     
     for age in range(aktuell_alder, start_alder):
+        pre_k10 += 204325  # Uppräkning av sparad utdelning
         pre_isk += sim_ny_isk_ins; pre_tjp += sim_ny_tjp_ins
-        pre_isk *= avk_faktor; pre_tjp *= avk_faktor; pre_aktie *= avk_faktor; pre_ips *= avk_faktor; pre_pf *= avk_faktor; pre_allm *= avk_faktor; pre_kpa *= avk_faktor; pre_futur *= avk_faktor; pre_bolag *= avk_faktor
+        pre_isk *= avk_faktor; pre_tjp *= avk_faktor; pre_aktie *= avk_faktor; pre_ips *= avk_faktor; pre_pf *= avk_faktor; pre_kpa *= avk_faktor; pre_futur *= avk_faktor
+        pre_allm *= avk_f_allman
+        pre_bolag *= avk_f_bolag
         
-    total_brutto_start = sum([pre_isk, pre_tjp, pre_aktie, pre_ips, pre_pf, pre_allm, pre_kpa, pre_futur, pre_bolag])
-    skatt_snitt = 0.32 if start_alder < 68 else 0.22
-    total_netto_start = pre_isk + (pre_bolag * 0.80) + (pre_aktie * 0.70) + ((pre_tjp + pre_ips + pre_pf + pre_allm + pre_kpa + pre_futur) * (1 - skatt_snitt))
-    beraknad_uttagsgrad_netto = ((onskat_netto_manad * 12) / total_netto_start) * 100 if total_netto_start > 0 else 0
+    total_netto_start_uppskattning = pre_isk + (pre_bolag * 0.80) + (pre_aktie * 0.70) + ((pre_tjp + pre_ips + pre_pf + pre_allm + pre_kpa + pre_futur) * 0.68)
+    beraknad_uttagsgrad_netto = ((onskat_netto_manad * 12) / total_netto_start_uppskattning) * 100 if total_netto_start_uppskattning > 0 else 0
 
     with col_u2:
         st.markdown("<p style='font-size:16px; margin-bottom: -10px;'>Ditt uttag per månad (Startåret):</p>", unsafe_allow_html=True)
@@ -287,6 +299,7 @@ with tab2:
 
     s_isk, s_tjp, s_aktie, s_ips, s_pf = s_isk_start, s_tjp_start, s_aktie_start, s_ips_start, s_pf_start
     s_allm, s_kpa, s_futur, s_bolag = allman_start, kpa_start, futur_start, bolagets_kassa_start
+    s_k10 = bolagets_k10_start
     
     aldrar, n_isk, n_bolag, n_tjp, n_aktie, n_ips, n_pf, n_allm, n_kpa, n_futur = [], [], [], [], [], [], [], [], [], []
     ut_isk, ut_bolag, ut_aktie, ut_tjp, ut_ips, ut_pf, ut_allm, ut_kpa, ut_futur = [], [], [], [], [], [], [], [], []
@@ -297,6 +310,8 @@ with tab2:
         aldrar.append(age)
         
         n_isk.append(max(0, s_isk)); n_bolag.append(max(0, s_bolag)); n_tjp.append(max(0, s_tjp)); n_aktie.append(max(0, s_aktie)); n_ips.append(max(0, s_ips)); n_pf.append(max(0, s_pf)); n_allm.append(max(0, s_allm)); n_kpa.append(max(0, s_kpa)); n_futur.append(max(0, s_futur))
+        
+        s_k10 += 204325 # Schablonbelopp läggs på k10 varje år
         
         if age < start_alder:
             s_isk += sim_ny_isk_ins; s_tjp += sim_ny_tjp_ins
@@ -341,8 +356,13 @@ with tab2:
                             elif namn == "PF": s_pf -= onipat_brutto
 
             if kvar_netto_att_fa_ut > 0:
-                flex_konton = [("ISK", s_isk, 0.0), ("Bolagets Kassa", s_bolag, 0.20), ("Aktiekonto", s_aktie, 0.30)]
-                for namn, saldo_brutto, skatt in flex_konton:
+                # Delar upp Bolagets kassa i K10 (20% skatt) och Överskott/Lön (50% skatt)
+                bolag_k10 = min(s_bolag, s_k10)
+                bolag_lon = max(0, s_bolag - s_k10)
+                
+                flex_konton = [("ISK", s_isk, 0.0), ("Bolagets Kassa K10", bolag_k10, 0.20), ("Aktiekonto", s_aktie, 0.30), ("Bolagets Kassa Lön", bolag_lon, 0.50)]
+                
+                for flex_namn, saldo_brutto, skatt in flex_konton:
                     if kvar_netto_att_fa_ut > 0 and saldo_brutto > 0:
                         max_netto = saldo_brutto * (1 - skatt)
                         if max_netto <= kvar_netto_att_fa_ut:
@@ -352,19 +372,32 @@ with tab2:
                             uttag_netto = kvar_netto_att_fa_ut
                             uttag_brutto = kvar_netto_att_fa_ut / (1 - skatt)
                             
-                        arets_uttag[namn] = uttag_brutto
                         kvar_netto_att_fa_ut -= uttag_netto
                         
-                        if namn == "ISK": s_isk -= uttag_brutto
-                        elif namn == "Bolagets Kassa": s_bolag -= uttag_brutto
-                        elif namn == "Aktiekonto": s_aktie -= uttag_brutto
+                        if flex_namn == "ISK": 
+                            s_isk -= uttag_brutto
+                            arets_uttag["ISK"] += uttag_brutto
+                        elif flex_namn == "Bolagets Kassa K10":
+                            s_bolag -= uttag_brutto
+                            s_k10 -= uttag_brutto
+                            arets_uttag["Bolagets Kassa"] += uttag_brutto
+                        elif flex_namn == "Bolagets Kassa Lön":
+                            s_bolag -= uttag_brutto
+                            arets_uttag["Bolagets Kassa"] += uttag_brutto
+                        elif flex_namn == "Aktiekonto": 
+                            s_aktie -= uttag_brutto
+                            arets_uttag["Aktiekonto"] += uttag_brutto
                         
             elif kvar_netto_att_fa_ut < 0:
                 s_isk += abs(kvar_netto_att_fa_ut)
-                arets_uttag["ISK"] = -abs(kvar_netto_att_fa_ut)
+                arets_uttag["ISK"] -= abs(kvar_netto_att_fa_ut)
 
         ut_isk.append(arets_uttag["ISK"]); ut_bolag.append(arets_uttag.get("Bolagets Kassa", 0)); ut_aktie.append(arets_uttag["Aktiekonto"]); ut_tjp.append(arets_uttag["Tjänstepension"]); ut_ips.append(arets_uttag["IPS"]); ut_pf.append(arets_uttag["PF"]); ut_allm.append(arets_uttag["Allmän Pension"]); ut_kpa.append(arets_uttag["KPA"]); ut_futur.append(arets_uttag["Futur"])
-        s_isk *= avk_faktor; s_bolag *= avk_faktor; s_tjp *= avk_faktor; s_aktie *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_allm *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
+        
+        # Unik avkastning per pott inför nästa år
+        s_isk *= avk_faktor; s_aktie *= avk_faktor; s_tjp *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
+        s_allm *= avk_f_allman
+        s_bolag *= avk_f_bolag
 
     sim_df_area = pd.DataFrame({"Ålder": aldrar, "Bolagets Kassa": n_bolag, "Aktiekonto": n_aktie, "ISK": n_isk, "Pensionsförsäkring": n_pf, "IPS": n_ips, "Futur Pension": n_futur, "KPA Traditionell": n_kpa, "Tjänstepension": n_tjp, "Allmän Pension": n_allm}).set_index("Ålder")
     sim_uttag_df = pd.DataFrame({"Ålder": aldrar, "Bolagets Kassa": ut_bolag, "Aktiekonto": ut_aktie, "ISK": ut_isk, "Pensionsförsäkring": ut_pf, "IPS": ut_ips, "Futur Pension": ut_futur, "KPA Traditionell": ut_kpa, "Tjänstepension": ut_tjp, "Allmän Pension": ut_allm}).set_index("Ålder")
@@ -386,6 +419,8 @@ with tab2:
         ink_skatt = 0.32 if age < 68 else 0.22
         pens_uttag = max(0, row['Pensionsförsäkring']) + max(0, row['IPS']) + max(0, row['Futur Pension']) + max(0, row['KPA Traditionell']) + max(0, row['Tjänstepension']) + max(0, row['Allmän Pension'])
         aktie_uttag, isk_uttag, bolag_uttag = row['Aktiekonto'], row['ISK'], max(0, row['Bolagets Kassa'])
+        
+        # Förenklad netto-beräkning för tabellvisning (20% snittskatt på bolag antas här för enkelhets skull i vyn)
         netto = (pens_uttag * (1 - ink_skatt)) + (aktie_uttag * 0.70) + (bolag_uttag * 0.80) + isk_uttag
         netto_lista_sim.append(int(netto))
         skattesats_pension_lista_sim.append(f"{int(ink_skatt*100)} %" if pens_uttag > 0 else "- (Skattefritt/Kapital)")
@@ -409,7 +444,7 @@ with tab3:
     st.subheader("⚖️ Företagaren: Aktiebolaget")
     st.markdown("### 🏢 Din bolagsstatus just nu")
     col_stat1, col_stat2 = st.columns(2)
-    with col_stat1: st.metric("Sparade vinstmedel i Bolaget", f"{int(bolagets_kassa_start):,} kr".replace(',', ' '))
+    with col_stat1: st.metric("Fritt Eget Kapital (Sparade Vinstmedel)", f"{int(bolagets_kassa_start):,} kr".replace(',', ' '))
     with col_stat2: st.metric("Sparat K10-utrymme", f"{int(bolagets_k10_start):,} kr".replace(',', ' '))
         
     st.markdown("---")
@@ -490,11 +525,9 @@ with tab5:
                 st.warning("Du måste ange ett belopp större än 0 för minst ett konto.")
             else:
                 try:
-                    # NAMNGIVNA OMRÅDEN! Ingen mer B7/E6-koordinat.
                     cell_map = {"ISK": "ISK_Saldo", "Tjänstepension": "TJP_Saldo", "Aktiekonto": "Aktiekonto_Saldo", "IPS": "IPS_Saldo", "Pensionsförsäkring": "PF_Saldo", "Allmän Pension": "Allman_Pension", "KPA Traditionell": "KPA_Traditionell", "Futur Pension": "Futur_Pension", "Bolagets Kassa": "Bolagets_Kassa"}
                     batch_map = {"Allmän Pension": "Allmän Pension", "Tjänstepension": "Tjänstepension", "KPA": "KPA Traditionell", "Futur Pension": "Futur Pension", "ISK": "ISK", "Aktiekonto": "Aktiekonto", "IPS": "IPS", "Pensionsförsäkring": "Pensionsförsäkring", "Bolagets Kassa": "Bolagets Kassa"}
                     
-                    # Hämta nuvarande saldon snabbt från våra inlästa variabler, inga onödiga API-anrop!
                     current_saldos = {"ISK": s_isk_start, "Tjänstepension": s_tjp_start, "Aktiekonto": s_aktie_start, "IPS": s_ips_start, "Pensionsförsäkring": s_pf_start, "Allmän Pension": allman_start, "KPA Traditionell": kpa_start, "Futur Pension": futur_start, "Bolagets Kassa": bolagets_kassa_start}
                     
                     creds_dict = dict(st.secrets["connections"]["gsheets"])
@@ -583,7 +616,7 @@ with tab5:
                 new_aktie = st.number_input("Aktiekonto Värde (kr)", value=int(s_aktie_start), step=1000)
                 new_allman = st.number_input("Allmän Pension (kr)", value=int(allman_start), step=1000)
             with col_s2:
-                new_bolagskassa = st.number_input("Företagets Kassa (kr)", value=int(bolagets_kassa_start), step=1000)
+                new_bolagskassa = st.number_input("Fritt Eget Kapital (kr)", value=int(bolagets_kassa_start), step=1000)
                 new_k10 = st.number_input("Sparat K10-utrymme (kr)", value=int(bolagets_k10_start), step=1000)
                 new_tjp = st.number_input("Tjänstepension Värde (kr)", value=int(s_tjp_start), step=1000)
             with col_s3:
@@ -608,7 +641,6 @@ with tab5:
                     sh = gc.open_by_url(sheet_url)
                     worksheet = sh.sheet1
                     
-                    # Använder uteslutande Namngivna Områden
                     batch_updates = [
                         {'range': 'ISK_Saldo', 'values': [[new_isk]]},
                         {'range': 'TJP_Saldo', 'values': [[new_tjp]]},
