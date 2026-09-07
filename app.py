@@ -88,7 +88,6 @@ for i in range(1, len(aldrar_t1)):
     t1_kpa.append(t1_kpa[-1] * avk_faktor_t1)
     t1_futur.append(t1_futur[-1] * avk_faktor_t1)
     
-    # Unika räntor för Bolag och Allmän
     t1_allm.append(t1_allm[-1] * avk_faktor_allman)
     t1_bolag.append(t1_bolag[-1] * avk_faktor_bolag)
 
@@ -283,7 +282,7 @@ with tab2:
     avk_f_allman = 1 + (ranta_allman / 100)
     
     for age in range(aktuell_alder, start_alder):
-        pre_k10 += 204325  # Uppräkning av sparad utdelning
+        pre_k10 += 204325
         pre_isk += sim_ny_isk_ins; pre_tjp += sim_ny_tjp_ins
         pre_isk *= avk_faktor; pre_tjp *= avk_faktor; pre_aktie *= avk_faktor; pre_ips *= avk_faktor; pre_pf *= avk_faktor; pre_kpa *= avk_faktor; pre_futur *= avk_faktor
         pre_allm *= avk_f_allman
@@ -311,7 +310,7 @@ with tab2:
         
         n_isk.append(max(0, s_isk)); n_bolag.append(max(0, s_bolag)); n_tjp.append(max(0, s_tjp)); n_aktie.append(max(0, s_aktie)); n_ips.append(max(0, s_ips)); n_pf.append(max(0, s_pf)); n_allm.append(max(0, s_allm)); n_kpa.append(max(0, s_kpa)); n_futur.append(max(0, s_futur))
         
-        s_k10 += 204325 # Schablonbelopp läggs på k10 varje år
+        s_k10 += 204325
         
         if age < start_alder:
             s_isk += sim_ny_isk_ins; s_tjp += sim_ny_tjp_ins
@@ -356,7 +355,6 @@ with tab2:
                             elif namn == "PF": s_pf -= onipat_brutto
 
             if kvar_netto_att_fa_ut > 0:
-                # Delar upp Bolagets kassa i K10 (20% skatt) och Överskott/Lön (50% skatt)
                 bolag_k10 = min(s_bolag, s_k10)
                 bolag_lon = max(0, s_bolag - s_k10)
                 
@@ -394,7 +392,6 @@ with tab2:
 
         ut_isk.append(arets_uttag["ISK"]); ut_bolag.append(arets_uttag.get("Bolagets Kassa", 0)); ut_aktie.append(arets_uttag["Aktiekonto"]); ut_tjp.append(arets_uttag["Tjänstepension"]); ut_ips.append(arets_uttag["IPS"]); ut_pf.append(arets_uttag["PF"]); ut_allm.append(arets_uttag["Allmän Pension"]); ut_kpa.append(arets_uttag["KPA"]); ut_futur.append(arets_uttag["Futur"])
         
-        # Unik avkastning per pott inför nästa år
         s_isk *= avk_faktor; s_aktie *= avk_faktor; s_tjp *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
         s_allm *= avk_f_allman
         s_bolag *= avk_f_bolag
@@ -420,7 +417,6 @@ with tab2:
         pens_uttag = max(0, row['Pensionsförsäkring']) + max(0, row['IPS']) + max(0, row['Futur Pension']) + max(0, row['KPA Traditionell']) + max(0, row['Tjänstepension']) + max(0, row['Allmän Pension'])
         aktie_uttag, isk_uttag, bolag_uttag = row['Aktiekonto'], row['ISK'], max(0, row['Bolagets Kassa'])
         
-        # Förenklad netto-beräkning för tabellvisning (20% snittskatt på bolag antas här för enkelhets skull i vyn)
         netto = (pens_uttag * (1 - ink_skatt)) + (aktie_uttag * 0.70) + (bolag_uttag * 0.80) + isk_uttag
         netto_lista_sim.append(int(netto))
         skattesats_pension_lista_sim.append(f"{int(ink_skatt*100)} %" if pens_uttag > 0 else "- (Skattefritt/Kapital)")
@@ -609,6 +605,14 @@ with tab5:
     st.markdown("---")
     st.markdown("### 📅 2. Den årliga storstädningen")
     with st.expander("Öppna formulär för årlig uppdatering av saldon & uppföljning"):
+        
+        st.info("💡 **Checklista för årlig uppdatering:**\n\n"
+                "1. **Logga in:** Öppna Avanza, Nordnet, MinPension.se och ditt bokföringsprogram.\n"
+                "2. **Dagens värde:** Fyll i det exakta aktuella saldot för varje pott i rutorna nedan.\n"
+                "3. **Bolagets Kassa:** Ska endast vara *Fritt Eget Kapital* (Balanserad vinst + Årets resultat). Rör inte aktiekapitalet.\n"
+                "4. **K10-utrymme:** Fyll i ditt totala sparade gränsbelopp enligt din senaste K10-blankett (Inkomstdeklaration).\n"
+                "5. **Spara:** Tryck på spara-knappen längst ner. Appen räknar ut årets avkastning och loggar allt automatiskt till historiken!")
+                
         with st.form("update_form"):
             col_s1, col_s2, col_s3 = st.columns(3)
             with col_s1:
