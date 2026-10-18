@@ -296,6 +296,22 @@ with tab2:
         st.markdown(f"<h1 style='font-size: 48px; color: #4CAF50;'>{int(onskat_netto_manad):,} kr / mån</h1>".replace(',', ' '), unsafe_allow_html=True)
         st.markdown(f"<p style='color: gray;'>Motsvarar ett uttag på ca {beraknad_uttagsgrad_netto:.1f}% av ditt nettokapital första året. Därefter ökar uttaget med {sim_uttags_inflation}% per år för att matcha inflationen.</p>", unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.subheader("🌟 Smarta Skattestrategier")
+    anvand_7_procent = st.checkbox("Aktivera 7-procentsmetoden (Lågbeskattad lön från bolaget från 68 år)", value=True)
+    with st.expander("📖 Så fungerar 7-procentsmetoden (Klicka för att läsa)"):
+        st.info("""
+        **Skattehacket för dig med Aktiebolag:**
+        Det år du fyller 68 år (riktåldern) inträffar en unik skattesituation i Sverige. Denna simulator drar nu nytta av det automatiskt:
+        
+        1. **Förhöjt grundavdrag:** Du får tjäna mycket mer innan staten drar inkomstskatt.
+        2. **Dubbelt jobbskatteavdrag:** Skatterabatten på arbetsinkomst (lön) maximeras för äldre.
+        3. **Sänkt arbetsgivaravgift:** Ditt bolag betalar bara 10,21 % (ålderspensionsavgift) istället för 31,42 %.
+
+        **Vad gör kalkylatorn?**
+        Med denna box ibockad kommer simulatorn att automatiskt försöka ta ut upp till **150 000 kr/år som lågbeskattad lön** från bolaget *efter* att du fyllt 68. Denna post prioriteras före ditt K10-utrymme eftersom den kombinerade skatten i detta spann landar på bara cirka 7–10 % – alltså billigare än de 20 % du betalar för aktieutdelning! Dessutom är lönen pensionsgrundande.
+        """)
+
     s_isk, s_tjp, s_aktie, s_ips, s_pf = s_isk_start, s_tjp_start, s_aktie_start, s_ips_start, s_pf_start
     s_allm, s_kpa, s_futur, s_bolag = allman_start, kpa_start, futur_start, bolagets_kassa_start
     s_k10 = bolagets_k10_start
@@ -355,10 +371,30 @@ with tab2:
                             elif namn == "PF": s_pf -= onipat_brutto
 
             if kvar_netto_att_fa_ut > 0:
-                bolag_k10 = min(s_bolag, s_k10)
-                bolag_lon = max(0, s_bolag - s_k10)
-                
-                flex_konton = [("ISK", s_isk, 0.0), ("Bolagets Kassa K10", bolag_k10, 0.20), ("Aktiekonto", s_aktie, 0.30), ("Bolagets Kassa Lön", bolag_lon, 0.50)]
+                if age >= 68 and anvand_7_procent:
+                    max_7_procent_brutto = 150000
+                    bolag_7_procent = min(s_bolag, max_7_procent_brutto)
+                    s_bolag_rest = s_bolag - bolag_7_procent
+                    bolag_k10 = min(s_bolag_rest, s_k10)
+                    bolag_lon = max(0, s_bolag_rest - s_k10)
+                    
+                    flex_konton = [
+                        ("ISK", s_isk, 0.0),
+                        ("Bolagets Kassa 7-procent", bolag_7_procent, 0.10), # Simulerad låg skatt för äldre
+                        ("Bolagets Kassa K10", bolag_k10, 0.20),
+                        ("Aktiekonto", s_aktie, 0.30),
+                        ("Bolagets Kassa Lön", bolag_lon, 0.50)
+                    ]
+                else:
+                    bolag_k10 = min(s_bolag, s_k10)
+                    bolag_lon = max(0, s_bolag - s_k10)
+                    
+                    flex_konton = [
+                        ("ISK", s_isk, 0.0), 
+                        ("Bolagets Kassa K10", bolag_k10, 0.20), 
+                        ("Aktiekonto", s_aktie, 0.30), 
+                        ("Bolagets Kassa Lön", bolag_lon, 0.50)
+                    ]
                 
                 for flex_namn, saldo_brutto, skatt in flex_konton:
                     if kvar_netto_att_fa_ut > 0 and saldo_brutto > 0:
@@ -375,9 +411,10 @@ with tab2:
                         if flex_namn == "ISK": 
                             s_isk -= uttag_brutto
                             arets_uttag["ISK"] += uttag_brutto
-                        elif flex_namn == "Bolagets Kassa K10":
+                        elif flex_namn in ["Bolagets Kassa K10", "Bolagets Kassa 7-procent"]:
                             s_bolag -= uttag_brutto
-                            s_k10 -= uttag_brutto
+                            if flex_namn == "Bolagets Kassa K10":
+                                s_k10 -= uttag_brutto
                             arets_uttag["Bolagets Kassa"] += uttag_brutto
                         elif flex_namn == "Bolagets Kassa Lön":
                             s_bolag -= uttag_brutto
@@ -482,8 +519,8 @@ with tab4:
     skatte_data = {
         "Pott / Konto": ["Bolagets Kassa (AB)", "ISK", "Aktiekonto", "Allmän Pension", "Tjänstepension", "KPA", "Futur", "IPS", "Pensionsförsäkring"],
         "Beskattning (Före 68)": ["20% Utdelningsskatt (Inom K10)", "Skatt på schablon (0%)", "30% kapitalskatt på vinst", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)"],
-        "Beskattning (Efter 68)": ["20% Utdelningsskatt", "Samma (Fortsatt låg skatt)", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"],
-        "Strategi": ["Använd som skattelyx (20%)", "Töm före 68 (Bryggan)", "Använd före 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68"]
+        "Beskattning (Efter 68)": ["20% Utdelningsskatt ELLER ~10% som Lön (7%-metoden)", "Samma (Fortsatt låg skatt)", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"],
+        "Strategi": ["Använd som skattelyx (K10 eller 7%-lön)", "Töm före 68 (Bryggan)", "Använd före 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68", "Spara till 68"]
     }
     st.table(pd.DataFrame(skatte_data))
 
@@ -495,7 +532,7 @@ with tab5:
     alder_68 = aktuell_alder_logg >= 68
     
     if not alder_68: st.info("🤖 **AI-Assistentens rekommendation:** Du är under 68 år. Finansiera livet via utdelning från **Bolagets Kassa** (20 % skatt inom K10) eller sälj av från **ISK/Aktiekontot**.")
-    else: st.info("🤖 **AI-Assistentens rekommendation:** Du har nått 68 år (Full skatterabatt). Prioritera uttag från **tjänstepensioner och allmän pension** för att tömma dessa medan det är billigt.")
+    else: st.info("🤖 **AI-Assistentens rekommendation:** Du har nått 68 år (Full skatterabatt). Prioritera ett lönuttag från bolaget på ca 100-150 tkr (7-procentsmetoden) och ta därefter från **tjänstepensioner och allmän pension**.")
         
     with st.form("batch_uttag_form"):
         inmatning_typ = st.radio("Beloppen nedan avser:", ["Netto (Det jag fick in på banken)", "Brutto (Hela beloppet före skatt)"])
@@ -505,7 +542,7 @@ with tab5:
         with c1:
             batch_inputs["Allmän Pension"] = st.number_input("Allmän Pension", min_value=0, value=0, step=1000)
             batch_inputs["Tjänstepension"] = st.number_input("Tjänstepension", min_value=0, value=0, step=1000)
-            batch_inputs["Bolagets Kassa"] = st.number_input("Utdelning (Bolagets Kassa)", min_value=0, value=0, step=1000)
+            batch_inputs["Bolagets Kassa"] = st.number_input("Utdelning / Lön (Bolagets Kassa)", min_value=0, value=0, step=1000)
         with c2:
             batch_inputs["KPA"] = st.number_input("KPA Traditionell", min_value=0, value=0, step=1000)
             batch_inputs["Futur Pension"] = st.number_input("Futur Pension", min_value=0, value=0, step=1000)
