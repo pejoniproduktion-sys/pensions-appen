@@ -380,7 +380,7 @@ with tab2:
                     
                     flex_konton = [
                         ("ISK", s_isk, 0.0),
-                        ("Bolagets Kassa 7-procent", bolag_7_procent, 0.10), # Simulerad låg skatt för äldre
+                        ("Bolagets Kassa 7-procent", bolag_7_procent, 0.10), 
                         ("Bolagets Kassa K10", bolag_k10, 0.20),
                         ("Aktiekonto", s_aktie, 0.30),
                         ("Bolagets Kassa Lön", bolag_lon, 0.50)
@@ -513,6 +513,45 @@ with tab3:
         st.write(f"- Särskild löneskatt (24,26% i bolaget): **-{int(sls_skatt):,} kr**".replace(',', ' '))
         st.write(f"- Framtida inkomstskatt ({int(inkomstskatt_procent*100)}%): **-{int(framtida_inkomstskatt):,} kr**".replace(',', ' '))
         st.metric("I plånboken framöver (Netto)", f"{int(netto_tjp):,} kr".replace(',', ' '))
+
+    st.markdown("---")
+    st.markdown("### 🧮 Kalkylator 68+: K10-Utdelning vs Lön (7%-metoden)")
+    st.info("När du fyllt 68 år (riktåldern) sänks arbetsgivaravgiften till 10,21 % och du får maximerat jobbskatteavdrag. Här jämför vi om det är bäst att ta ut **redan skattade vinstmedel (Fritt Eget Kapital)** som aktieutdelning eller som lön.")
+    
+    utrymme_att_ta_ut = st.slider("Belopp i bolaget att ta ut (kr)", 50000, 500000, 150000, 10000)
+    din_snittskatt_lon = st.slider("Din förväntade inkomstskatt på denna lön (%)", 5.0, 20.0, 10.0, 0.5)
+    
+    col_k1, col_k2 = st.columns(2)
+    with col_k1:
+        st.markdown("#### Alt 1: K10-Utdelning (20 %)")
+        st.write("Bolaget betalar ut beloppet rakt av som utdelning.")
+        privat_skatt_k10 = utrymme_att_ta_ut * 0.20
+        netto_k10 = utrymme_att_ta_ut - privat_skatt_k10
+        st.write(f"- Skatt (20 %): **-{int(privat_skatt_k10):,} kr**".replace(',', ' '))
+        st.metric("Netto i plånboken", f"{int(netto_k10):,} kr".replace(',', ' '))
+        
+    with col_k2:
+        st.markdown("#### Alt 2: Lön (7%-metoden)")
+        st.write("Bolaget använder beloppet för att betala bruttolön + 10,21 % i avgift.")
+        bruttolon_68 = utrymme_att_ta_ut / 1.1021
+        arb_avgift_68 = utrymme_att_ta_ut - bruttolon_68
+        privat_skatt_lon = bruttolon_68 * (din_snittskatt_lon / 100)
+        netto_lon = bruttolon_68 - privat_skatt_lon
+        
+        # PGI (Pensionsgrundande inkomst) ger 18,5% insättning till allmän pension
+        pgi_vinst = bruttolon_68 * 0.185
+        
+        st.write(f"- Ålderspensionsavgift (10,21 %): **-{int(arb_avgift_68):,} kr**".replace(',', ' '))
+        st.write(f"- Inkomstskatt ({din_snittskatt_lon} %): **-{int(privat_skatt_lon):,} kr**".replace(',', ' '))
+        st.metric("Netto i plånboken", f"{int(netto_lon):,} kr".replace(',', ' '))
+        st.caption(f"💡 **Bonus:** Lönen ger dig även ca **+{int(pgi_vinst):,} kr** insatt på din allmänna pension!")
+        
+    if netto_lon + pgi_vinst > netto_k10:
+        st.success(f"✅ **Slutsats:** Lön är mer lönsamt! Du får in mer värde totalt när man räknar in den extra pensionsinsättningen från staten.")
+    elif netto_lon > netto_k10:
+        st.success("✅ **Slutsats:** Lön ger mer direkt i handen, plus att du får extra pension! Ett självklart val.")
+    else:
+        st.warning("⚖️ **Slutsats:** K10 ger marginellt mer kontanter i handen just nu. Men lönen bygger din pension. Välj utifrån om kassaflöde nu eller framtida pension är viktigast.")
 
 with tab4:
     st.subheader("📚 Pensionsskolan: Så beskattas dina 9 potter")
