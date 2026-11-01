@@ -5,7 +5,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import datetime
 import plotly.express as px
-import plotly.graph_objects as go
 
 st.set_page_config(page_title="Pensionskalkylator", page_icon="💰", layout="wide")
 st.title("Din Pensions-Dashboard 💰")
@@ -474,25 +473,46 @@ with tab2:
     cols = ['Aktiekonto', 'Bolagets Kassa', 'ISK', 'Pensionsförsäkring', 'IPS', 'Futur Pension', 'KPA Traditionell', 'Tjänstepension', 'Allmän Pension', 'Skattesats (Pensioner)', 'Totalt Uttag (Brutto)', 'I plånboken (Netto)', 'Ingående Saldo (Före uttag)']
     st.dataframe(sim_uttag_df_filtered[cols].astype(object), use_container_width=True)
 
-    # --- NY: INTERAKTIV SIMULERINGSDASHBOARD ---
+    # --- UPPDATERAD: INTERAKTIV SIMULERINGSDASHBOARD MED TYDLIG PEDAGOGIK ---
     st.markdown("---")
-    st.subheader("🎢 Interaktiv Simulering: Så länge räcker kapitalet")
-    st.info("Laborera med avkastning och uttag för att se när pengarna beräknas ta slut. Startar från ditt simulerade kapital vid den valda startåldern.")
+    st.subheader("🎢 Interaktiv Simulering (Helikoptervyn)")
+    st.info("I denna vy har vi slagit ihop ALLA dina potter (ISK + Pensioner + Bolag) till en enda stor klumpsumma vid din valda startålder. Syftet är att göra ett stresstest: Hur länge räcker dina **totala** pengar när de ställs mot dina tänkta uttag?")
     
     col_sim_1, col_sim_2 = st.columns(2)
     with col_sim_1:
         start_alder_sim = st.slider("Välj startålder för simulering", min_value=60, max_value=75, value=max(60, start_alder))
+        
+        # Hämtar korrekt rad från sim_df_area som innehåller det summerade värdet av alla dina potter det året
         simulerat_startkapital = sim_df_area.loc[start_alder_sim].sum() if start_alder_sim in sim_df_area.index else totalt_vid_pension
-        st.metric("Startkapital (Estimat)", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
+        st.metric("Ditt Totala Startkapital (Alla potter ihopslagna)", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
         
     with col_sim_2:
-        dash_avkastning = st.slider("Förväntad avkastning per år (%)", min_value=0.0, max_value=12.0, value=5.0, step=0.5, key="dash_avk")
-        dash_uttag = st.slider("Önskat netto-uttag per månad (kr)", min_value=20000, max_value=100000, value=int(onskat_netto_manad), step=1000, key="dash_uttag")
+        dash_avkastning = st.slider("Förväntad avkastning på totala kapitalet (%)", min_value=0.0, max_value=12.0, value=5.0, step=0.5, key="dash_avk")
+        dash_uttag = st.slider("Önskat brutto-uttag per månad (kr)", min_value=20000, max_value=100000, value=int(onskat_netto_manad * 1.3), step=1000, key="dash_uttag")
         dash_inflation = st.slider("Årlig inflation (ökning av uttag) (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5, key="dash_inf")
+
+    # --- Röntgen-rutan som förklarar matematiken ---
+    forsta_aret_avkastning = simulerat_startkapital * (dash_avkastning / 100)
+    forsta_aret_uttag = dash_uttag * 12
+    netto_forsta_aret = forsta_aret_avkastning - forsta_aret_uttag
+    
+    with st.expander("🧐 Varför går grafen uppåt eller nedåt? (Klicka för att se matematiken)", expanded=True):
+        st.write(f"Grafen är en ren dragkamp mellan **Avkastning** (pengar in) och **Uttag** (pengar ut). Så här ser matematiken ut för det absolut första året i din simulering (vid {start_alder_sim} års ålder):")
+        
+        st.markdown(f"**+ Årets avkastning ({dash_avkastning} %):** + {int(forsta_aret_avkastning):,} kr".replace(',', ' '))
+        st.markdown(f"**- Årets totala uttag:** - {int(forsta_aret_uttag):,} kr".replace(',', ' '))
+        st.markdown("---")
+        
+        if netto_forsta_aret > 0:
+            st.success(f"⚖️ **Resultat:** Eftersom din avkastning är högre än dina uttag, växer kapitalet med **{int(netto_forsta_aret):,} kr** detta år. Du är ekonomiskt oberoende och grafen kommer därför att peka UPPÅT.".replace(',', ' '))
+        elif netto_forsta_aret < 0:
+            st.warning(f"⚖️ **Resultat:** Eftersom du tar ut mer än vad räntan hinner generera, krymper kapitalet med **{int(abs(netto_forsta_aret)):,} kr** detta år. Grafen kommer att peka NEDÅT tills pengarna till slut är borta.".replace(',', ' '))
+        else:
+            st.info("⚖️ **Resultat:** Det är helt jämnt! Pengarna varken ökar eller minskar.")
 
     sim_ar, sim_kapital = [], []
     nuvarande_kap = simulerat_startkapital
-    nuvarande_arsuttag = dash_uttag * 12
+    nuvarande_arsuttag = forsta_aret_uttag
     
     for ar in range(start_alder_sim, 96):
         sim_ar.append(ar)
@@ -501,13 +521,13 @@ with tab2:
         nuvarande_arsuttag *= (1 + (dash_inflation / 100))
         
     sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
-    fig_line = px.area(sim_data, x="Ålder", y="Kapital (kr)", title=f"Kapitalutveckling från {start_alder_sim} år")
+    fig_line = px.area(sim_data, x="Ålder", y="Kapital (kr)", title=f"Total kapitalutveckling från {start_alder_sim} år")
     fig_line.update_traces(fillcolor='rgba(76, 175, 80, 0.2)', line_color='rgba(76, 175, 80, 1)')
-    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title="Portföljvärde (kr)", yaxis_tickformat=",.0f")
+    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title="Totalt Portföljvärde (kr)", yaxis_tickformat=",.0f")
     st.plotly_chart(fig_line, use_container_width=True)
     
     ar_kvar = len([k for k in sim_kapital if k > 0])
-    st.caption(f"💡 Med dessa inställningar räcker kapitalet i ungefär **{ar_kvar} år** (till {start_alder_sim + ar_kvar} års ålder).")
+    st.caption(f"💡 Med dessa inställningar räcker kapitalet fram till minst {start_alder_sim + ar_kvar - 1} års ålder.")
 
 with tab3:
     st.subheader("⚖️ Företagaren: Aktiebolaget")
