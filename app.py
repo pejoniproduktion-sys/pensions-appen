@@ -5,6 +5,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import datetime
 import plotly.express as px
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Pensionskalkylator", page_icon="💰", layout="wide")
 st.title("Din Pensions-Dashboard 💰")
@@ -473,6 +474,41 @@ with tab2:
     cols = ['Aktiekonto', 'Bolagets Kassa', 'ISK', 'Pensionsförsäkring', 'IPS', 'Futur Pension', 'KPA Traditionell', 'Tjänstepension', 'Allmän Pension', 'Skattesats (Pensioner)', 'Totalt Uttag (Brutto)', 'I plånboken (Netto)', 'Ingående Saldo (Före uttag)']
     st.dataframe(sim_uttag_df_filtered[cols].astype(object), use_container_width=True)
 
+    # --- NY: INTERAKTIV SIMULERINGSDASHBOARD ---
+    st.markdown("---")
+    st.subheader("🎢 Interaktiv Simulering: Så länge räcker kapitalet")
+    st.info("Laborera med avkastning och uttag för att se när pengarna beräknas ta slut. Startar från ditt simulerade kapital vid den valda startåldern.")
+    
+    col_sim_1, col_sim_2 = st.columns(2)
+    with col_sim_1:
+        start_alder_sim = st.slider("Välj startålder för simulering", min_value=60, max_value=75, value=max(60, start_alder))
+        simulerat_startkapital = sim_df_area.loc[start_alder_sim].sum() if start_alder_sim in sim_df_area.index else totalt_vid_pension
+        st.metric("Startkapital (Estimat)", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
+        
+    with col_sim_2:
+        dash_avkastning = st.slider("Förväntad avkastning per år (%)", min_value=0.0, max_value=12.0, value=5.0, step=0.5, key="dash_avk")
+        dash_uttag = st.slider("Önskat netto-uttag per månad (kr)", min_value=20000, max_value=100000, value=int(onskat_netto_manad), step=1000, key="dash_uttag")
+        dash_inflation = st.slider("Årlig inflation (ökning av uttag) (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5, key="dash_inf")
+
+    sim_ar, sim_kapital = [], []
+    nuvarande_kap = simulerat_startkapital
+    nuvarande_arsuttag = dash_uttag * 12
+    
+    for ar in range(start_alder_sim, 96):
+        sim_ar.append(ar)
+        sim_kapital.append(max(0, nuvarande_kap))
+        nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (dash_avkastning / 100))
+        nuvarande_arsuttag *= (1 + (dash_inflation / 100))
+        
+    sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
+    fig_line = px.area(sim_data, x="Ålder", y="Kapital (kr)", title=f"Kapitalutveckling från {start_alder_sim} år")
+    fig_line.update_traces(fillcolor='rgba(76, 175, 80, 0.2)', line_color='rgba(76, 175, 80, 1)')
+    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title="Portföljvärde (kr)", yaxis_tickformat=",.0f")
+    st.plotly_chart(fig_line, use_container_width=True)
+    
+    ar_kvar = len([k for k in sim_kapital if k > 0])
+    st.caption(f"💡 Med dessa inställningar räcker kapitalet i ungefär **{ar_kvar} år** (till {start_alder_sim + ar_kvar} års ålder).")
+
 with tab3:
     st.subheader("⚖️ Företagaren: Aktiebolaget")
     st.markdown("### 🏢 Din bolagsstatus just nu")
@@ -538,7 +574,6 @@ with tab3:
         privat_skatt_lon = bruttolon_68 * (din_snittskatt_lon / 100)
         netto_lon = bruttolon_68 - privat_skatt_lon
         
-        # PGI (Pensionsgrundande inkomst) ger 18,5% insättning till allmän pension
         pgi_vinst = bruttolon_68 * 0.185
         
         st.write(f"- Ålderspensionsavgift (10,21 %): **-{int(arb_avgift_68):,} kr**".replace(',', ' '))
