@@ -61,6 +61,10 @@ st.markdown("---")
 pott_lista = ['ISK Värde', 'Bolagets Kassa Värde', 'Aktiekonto Värde', 'Allmän Pension Värde', 'Tjänstepension Värde', 'Pensionsförsäkring Värde', 'IPS Värde', 'KPA Traditionell Värde', 'Futur Pension Värde']
 pott_namn_ren = ['ISK', 'Bolagets Kassa', 'Aktiekonto', 'Allmän Pension', 'Tjänstepension', 'Pensionsförsäkring', 'IPS', 'KPA Traditionell', 'Futur Pension']
 
+# Dynamiska textvariabler att använda i rubriker över hela appen
+skatte_text = "Netto" if "Netto" in skatte_läge else "Brutto"
+inflations_text = f" (Köpkraft)" if simulera_inflation else ""
+
 # --- BYGG UPP GRUNDPROGNOSEN FÖR DASHBOARD (FLIK 1) ---
 aldrar_t1 = list(range(aktuell_alder, 91))
 t1_isk, t1_tjp, t1_aktie, t1_ips, t1_pf = [s_isk_start], [s_tjp_start], [s_aktie_start], [s_ips_start], [s_pf_start]
@@ -195,9 +199,6 @@ with tab1:
     pension_rad = chart_df[chart_df['Ålder'] == visnings_alder]
     totalt_vid_val = pension_rad['Totalt Värde'].values[0] if not pension_rad.empty else 0
     
-    skatte_text = "Netto" if "Netto" in skatte_läge else "Brutto"
-    inflations_text = f" (Köpkraft)" if simulera_inflation else ""
-    
     col1, col2, col3, col4 = st.columns(4)
     with col1: st.metric(f"Prognos Totalt Värde | {skatte_text}{inflations_text}", snygga_siffror(totalt_vid_val))
     with col2: st.metric("ISK", snygga_siffror(pension_rad['ISK Värde'].values[0] if not pension_rad.empty else 0))
@@ -213,7 +214,7 @@ with tab1:
     with col8: st.metric("IPS & PF", snygga_siffror((pension_rad['IPS Värde'].values[0] if not pension_rad.empty else 0) + (pension_rad['Pensionsförsäkring Värde'].values[0] if not pension_rad.empty else 0)))
 
     st.markdown("---")
-    prognos_fig = rita_stapeldiagram_med_total(chart_df, 'Ålder', pott_lista)
+    prognos_fig = rita_stapeldiagram_med_total(chart_df, 'Ålder', pott_lista, y_titel=f"Belopp (kr) | {skatte_text}{inflations_text}")
     st.plotly_chart(prognos_fig, use_container_width=True)
     
     if historik_finns:
@@ -353,14 +354,14 @@ with tab2:
     sim_df_area = pd.DataFrame({"Ålder": aldrar, "Bolagets Kassa": n_bolag, "Aktiekonto": n_aktie, "ISK": n_isk, "Pensionsförsäkring": n_pf, "IPS": n_ips, "Futur Pension": n_futur, "KPA Traditionell": n_kpa, "Tjänstepension": n_tjp, "Allmän Pension": n_allm}).set_index("Ålder")
     sim_uttag_df = pd.DataFrame({"Ålder": aldrar, "Bolagets Kassa": ut_bolag, "Aktiekonto": ut_aktie, "ISK": ut_isk, "Pensionsförsäkring": ut_pf, "IPS": ut_ips, "Futur Pension": ut_futur, "KPA Traditionell": ut_kpa, "Tjänstepension": ut_tjp, "Allmän Pension": ut_allm}).set_index("Ålder")
 
-    st.subheader(f"📊 1. Saldoutveckling från {start_alder} år (Visar Bruttokapital)")
-    fig_sim = rita_stapeldiagram_med_total(sim_df_area, 'Ålder', pott_namn_ren)
+    st.subheader(f"📊 1. Saldoutveckling från {start_alder} år (Visar {skatte_text}{inflations_text})")
+    fig_sim = rita_stapeldiagram_med_total(sim_df_area, 'Ålder', pott_namn_ren, y_titel=f"Belopp (kr) | {skatte_text}{inflations_text}")
     st.plotly_chart(fig_sim, use_container_width=True)
     
     # --- NY GRAF: SKATT VS NETTO ---
     st.markdown("---")
-    st.subheader(f"💰 2. Din Inkomst & Skatt över tid (När och hur mycket beskattas du?)")
-    st.info("Här ser du brutto, netto och skatt sammanflätat. Den gröna stapeln är pengarna som landar på bankkontot (ditt valda mål). Den röda stapeln är skatten som systemet måste betala in från dina konton för att nettot ska stämma. **Hela stapelns höjd = Ditt faktiska Bruttouttag.**")
+    st.subheader(f"💰 2. Din Inkomst & Skatt över tid (Brutto{inflations_text})")
+    st.info("Här ser du brutto, netto och skatt sammanflätat. Den gröna stapeln är pengarna som landar på bankkontot. Den röda stapeln är skatten som systemet måste betala in från dina konton för att nettot ska stämma.\n\n*Notera: Denna graf visar alltid Brutto (Netto + Skatt) oavsett din globala inställning, för att kunna demonstrera skatteeffekten.*")
     
     sim_uttag_df_filtered = sim_uttag_df[sim_uttag_df.index >= start_alder].copy().round(0).astype(int)
     skattesats_pension_lista_sim, netto_lista_sim, skatt_kr_lista, ingaende_saldo_lista, total_brutto_lista = [], [], [], [], []
@@ -398,8 +399,7 @@ with tab2:
     })
     
     fig_skatt = px.bar(df_skatt_graf, x='Ålder', y=['I plånboken (Netto)', 'Inbetald Skatt'], 
-                       title="Ditt Bruttouttag uppdelat i Netto och Skatt",
-                       labels={'value': 'Belopp (kr)', 'variable': 'Kategori'},
+                       labels={'value': f'Belopp (kr){inflations_text}', 'variable': 'Kategori'},
                        color_discrete_map={'I plånboken (Netto)': '#4CAF50', 'Inbetald Skatt': '#F44336'})
     fig_skatt.update_layout(barmode='stack', hovermode="x unified", legend_title="")
     st.plotly_chart(fig_skatt, use_container_width=True)
@@ -418,7 +418,7 @@ with tab2:
         start_alder_sim = st.slider("Välj startålder för Helikoptersimulering", min_value=60, max_value=75, value=max(60, start_alder))
         
         simulerat_startkapital = sim_df_area.loc[start_alder_sim].sum() if start_alder_sim in sim_df_area.index else 0
-        st.metric("Ditt Totala Startkapital (Alla potter ihopslagna)", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
+        st.metric(f"Ditt Totala Startkapital ({skatte_text}{inflations_text})", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
         
     with col_sim_2:
         dash_avkastning = st.slider("Långsiktig förväntad avkastning på portföljen (%)", min_value=0.0, max_value=12.0, value=forvantad_avkastning_procent, step=0.5, key="dash_avk")
@@ -430,26 +430,30 @@ with tab2:
 
         dash_inflation = st.slider("Årlig inflation (ökning av uttag) (%)", min_value=0.0, max_value=5.0, value=inflations_takt if simulera_inflation else 0.0, step=0.5, key="dash_inf")
 
-    # Hämta det RIKTIGA bruttouttaget från uttagsmotorn för detta startår
     start_idx = start_alder_sim - start_alder
     if start_idx >= 0 and start_idx < len(sim_uttag_df_filtered):
-        forsta_aret_uttag = sim_uttag_df_filtered.iloc[start_idx]['Totalt Uttag (Brutto)']
+        if "Netto" in skatte_läge:
+            forsta_aret_uttag = sim_uttag_df_filtered.iloc[start_idx]['I plånboken (Netto)']
+        else:
+            forsta_aret_uttag = sim_uttag_df_filtered.iloc[start_idx]['Totalt Uttag (Brutto)']
+            
         forsta_aret_netto = sim_uttag_df_filtered.iloc[start_idx]['I plånboken (Netto)']
         forsta_aret_skatt = sim_uttag_df_filtered.iloc[start_idx]['Inbetald Skatt (kr)']
+        forsta_aret_brutto = sim_uttag_df_filtered.iloc[start_idx]['Totalt Uttag (Brutto)']
     else:
-        forsta_aret_uttag = onskat_netto_manad * 12 * 1.3 # Fallback om slidern hamnar utanför
+        forsta_aret_uttag = onskat_netto_manad * 12
         forsta_aret_netto = onskat_netto_manad * 12
-        forsta_aret_skatt = forsta_aret_uttag - forsta_aret_netto
+        forsta_aret_skatt = 0
+        forsta_aret_brutto = forsta_aret_uttag
 
-    # Röntgen-rutan
     forsta_aret_avkastning = simulerat_startkapital * (faktisk_avk_ar_1 / 100)
     netto_forsta_aret = forsta_aret_avkastning - forsta_aret_uttag
     
     with st.expander(f"🧐 Så fungerar ditt startår vid {start_alder_sim} års ålder (Klicka för insyn)", expanded=True):
-        st.write(f"För att få ut ditt mål på **{int(forsta_aret_netto):,} kr netto**, drar systemet **{int(forsta_aret_uttag):,} kr brutto** från dina konton (inkl. **{int(forsta_aret_skatt):,} kr** i skatt).".replace(',', ' '))
-        st.write("Ditt kapital slåss nu mot detta bruttouttag:")
+        st.write(f"För att få ut ditt mål på **{int(forsta_aret_netto):,} kr netto**, drar systemet **{int(forsta_aret_brutto):,} kr brutto** från dina konton (inkl. **{int(forsta_aret_skatt):,} kr** i skatt).".replace(',', ' '))
+        st.write(f"Eftersom du valt att visa grafen i **{skatte_text}**, slåss ditt {skatte_text}kapital nu mot detta {skatte_text}uttag:")
         st.markdown(f"**+ Årets avkastning ({faktisk_avk_ar_1} %):** {int(forsta_aret_avkastning):,} kr".replace(',', ' '))
-        st.markdown(f"**- Hela årets bruttouttag:** - {int(forsta_aret_uttag):,} kr".replace(',', ' '))
+        st.markdown(f"**- Hela årets uttag ({skatte_text}):** - {int(forsta_aret_uttag):,} kr".replace(',', ' '))
         st.markdown("---")
         
         if netto_forsta_aret > 0:
@@ -457,7 +461,6 @@ with tab2:
         else:
             st.warning(f"⚖️ **Resultat:** Uttagen vinner. Kapitalet krymper med **{int(abs(netto_forsta_aret)):,} kr** detta år och grafen pekar nedåt.".replace(',', ' '))
 
-    # Simuleringsloop
     sim_ar, sim_kapital = [], []
     nuvarande_kap = simulerat_startkapital
     nuvarande_arsuttag = forsta_aret_uttag
@@ -472,7 +475,7 @@ with tab2:
     sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
     fig_line = px.area(sim_data, x="Ålder", y="Kapital (kr)", title=f"Total kapitalutveckling från {start_alder_sim} år")
     fig_line.update_traces(fillcolor='rgba(76, 175, 80, 0.2)', line_color='rgba(76, 175, 80, 1)')
-    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title="Totalt Portföljvärde (kr)", yaxis_tickformat=",.0f")
+    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title=f"Totalt Portföljvärde | {skatte_text}", yaxis_tickformat=",.0f")
     st.plotly_chart(fig_line, use_container_width=True)
     
     ar_kvar = len([k for k in sim_kapital if k > 0])
