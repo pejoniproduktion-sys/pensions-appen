@@ -473,7 +473,7 @@ with tab2:
     cols = ['Aktiekonto', 'Bolagets Kassa', 'ISK', 'Pensionsförsäkring', 'IPS', 'Futur Pension', 'KPA Traditionell', 'Tjänstepension', 'Allmän Pension', 'Skattesats (Pensioner)', 'Totalt Uttag (Brutto)', 'I plånboken (Netto)', 'Ingående Saldo (Före uttag)']
     st.dataframe(sim_uttag_df_filtered[cols].astype(object), use_container_width=True)
 
-    # --- UPPDATERAD: INTERAKTIV SIMULERINGSDASHBOARD MED TYDLIG PEDAGOGIK ---
+    # --- UPPDATERAD: INTERAKTIV SIMULERINGSDASHBOARD (HELIKOPTERVYN) ---
     st.markdown("---")
     st.subheader("🎢 Interaktiv Simulering (Helikoptervyn)")
     st.info("I denna vy har vi slagit ihop ALLA dina potter (ISK + Pensioner + Bolag) till en enda stor klumpsumma vid din valda startålder. Syftet är att göra ett stresstest: Hur länge räcker dina **totala** pengar när de ställs mot dina tänkta uttag?")
@@ -482,42 +482,55 @@ with tab2:
     with col_sim_1:
         start_alder_sim = st.slider("Välj startålder för simulering", min_value=60, max_value=75, value=max(60, start_alder))
         
-        # Hämtar korrekt rad från sim_df_area som innehåller det summerade värdet av alla dina potter det året
         simulerat_startkapital = sim_df_area.loc[start_alder_sim].sum() if start_alder_sim in sim_df_area.index else totalt_vid_pension
         st.metric("Ditt Totala Startkapital (Alla potter ihopslagna)", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
         
     with col_sim_2:
-        dash_avkastning = st.slider("Förväntad avkastning på totala kapitalet (%)", min_value=0.0, max_value=12.0, value=5.0, step=0.5, key="dash_avk")
+        dash_avkastning = st.slider("Förväntad avkastning på totala kapitalet (%)", min_value=0.0, max_value=12.0, value=4.0, step=0.5, key="dash_avk")
+        
+        # NY FUNKTION: Specifik avkastning för pågående år
+        anvand_faktisk_avk = st.checkbox("📍 Använd specifik/faktisk avkastning för det första året", value=False)
+        if anvand_faktisk_avk:
+            faktisk_avk_ar_1 = st.number_input("Faktisk avkastning i år (%)", min_value=-50.0, max_value=100.0, value=10.0, step=0.5)
+        else:
+            faktisk_avk_ar_1 = dash_avkastning
+
         dash_uttag = st.slider("Önskat brutto-uttag per månad (kr)", min_value=20000, max_value=100000, value=int(onskat_netto_manad * 1.3), step=1000, key="dash_uttag")
         dash_inflation = st.slider("Årlig inflation (ökning av uttag) (%)", min_value=0.0, max_value=5.0, value=2.0, step=0.5, key="dash_inf")
 
-    # --- Röntgen-rutan som förklarar matematiken ---
-    forsta_aret_avkastning = simulerat_startkapital * (dash_avkastning / 100)
+    # --- Röntgen-rutan ---
+    forsta_aret_avkastning = simulerat_startkapital * (faktisk_avk_ar_1 / 100)
     forsta_aret_uttag = dash_uttag * 12
     netto_forsta_aret = forsta_aret_avkastning - forsta_aret_uttag
     
     with st.expander("🧐 Varför går grafen uppåt eller nedåt? (Klicka för att se matematiken)", expanded=True):
-        st.write(f"Grafen är en ren dragkamp mellan **Avkastning** (pengar in) och **Uttag** (pengar ut). Så här ser matematiken ut för det absolut första året i din simulering (vid {start_alder_sim} års ålder):")
+        st.write(f"Grafen är en dragkamp mellan **Avkastning** (pengar in) och **Uttag** (pengar ut). Så här ser matematiken ut för det första året i din simulering (vid {start_alder_sim} års ålder):")
         
-        st.markdown(f"**+ Årets avkastning ({dash_avkastning} %):** + {int(forsta_aret_avkastning):,} kr".replace(',', ' '))
+        st.markdown(f"**+ Årets avkastning ({faktisk_avk_ar_1} %):** {int(forsta_aret_avkastning):,} kr".replace(',', ' '))
         st.markdown(f"**- Årets totala uttag:** - {int(forsta_aret_uttag):,} kr".replace(',', ' '))
         st.markdown("---")
         
         if netto_forsta_aret > 0:
-            st.success(f"⚖️ **Resultat:** Eftersom din avkastning är högre än dina uttag, växer kapitalet med **{int(netto_forsta_aret):,} kr** detta år. Du är ekonomiskt oberoende och grafen kommer därför att peka UPPÅT.".replace(',', ' '))
+            st.success(f"⚖️ **Resultat:** Avkastningen överstiger uttagen. Kapitalet växer med **{int(netto_forsta_aret):,} kr** under detta år och grafen pekar uppåt.".replace(',', ' '))
         elif netto_forsta_aret < 0:
-            st.warning(f"⚖️ **Resultat:** Eftersom du tar ut mer än vad räntan hinner generera, krymper kapitalet med **{int(abs(netto_forsta_aret)):,} kr** detta år. Grafen kommer att peka NEDÅT tills pengarna till slut är borta.".replace(',', ' '))
+            st.warning(f"⚖️ **Resultat:** Uttagen är större än räntan. Kapitalet krymper med **{int(abs(netto_forsta_aret)):,} kr** detta år och grafen pekar nedåt.".replace(',', ' '))
         else:
-            st.info("⚖️ **Resultat:** Det är helt jämnt! Pengarna varken ökar eller minskar.")
+            st.info("⚖️ **Resultat:** Avkastning och uttag tar ut varandra. Kapitalet är oförändrat.")
 
+    # --- Beräkningsloop som tar hänsyn till det specifika första året ---
     sim_ar, sim_kapital = [], []
     nuvarande_kap = simulerat_startkapital
     nuvarande_arsuttag = forsta_aret_uttag
     
-    for ar in range(start_alder_sim, 96):
+    for i, ar in enumerate(range(start_alder_sim, 96)):
         sim_ar.append(ar)
         sim_kapital.append(max(0, nuvarande_kap))
-        nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (dash_avkastning / 100))
+        
+        # Använd den faktiska inmatade avkastningen om det är första steget (i=0) i loopen, 
+        # annars den långsiktiga reglage-avkastningen.
+        arets_avk_procent = faktisk_avk_ar_1 if (anvand_faktisk_avk and i == 0) else dash_avkastning
+        
+        nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (arets_avk_procent / 100))
         nuvarande_arsuttag *= (1 + (dash_inflation / 100))
         
     sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
