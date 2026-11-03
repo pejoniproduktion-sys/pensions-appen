@@ -237,7 +237,9 @@ with tab2:
         with st.expander("⚙️ Avancerade inställningar (Pensionsåldrar & Sparande)"):
             c_i1, c_i2 = st.columns(2)
             with c_i1:
-                sim_ny_isk_ins = st.number_input("Sparande ISK (kr/år)", value=int(arlig_isk_ins), step=10000)
+                sim_ny_isk_ins = st.number_input("Privat sparande ISK (kr/år)", value=int(arlig_isk_ins), step=1000)
+                st.caption("💡 Målsättning: ca 136 000 kr/år (Löpande sparande fram till startålder)")
+                
                 sim_ny_tjp_ins = st.number_input("Avsättning TJP (kr/år)", value=int(arlig_tjp_ins), step=10000)
                 start_alder_allman = st.slider("Start Allmän Pension", 60, 75, 68)
                 utb_tid_allman = st.slider("Utb.tid Allmän (år)", 5, 40, 20)
@@ -616,7 +618,9 @@ with tab5:
                 new_kpa = st.number_input("KPA Traditionell", value=int(kpa_start), step=1000)
                 new_futur = st.number_input("Futur Pension", value=int(futur_start), step=1000)
                 
-            new_privatspar_ar = st.number_input("Privat sparande (kr/år)", value=36000, step=1000)
+            st.markdown("---")
+            new_privatspar_ar = st.number_input("Privat sparande ISK (kr/år)", value=int(arlig_isk_ins), step=1000)
+            st.caption("💡 Målsättning: ca 136 000 kr/år. Spara ner detta belopp för att ändra grundvärdet i kalkylarket.")
             new_tjp_ins = st.number_input("Bolagets avsättning TJP (kr/år)", value=int(arlig_tjp_ins), step=10000)
                 
             if st.form_submit_button("Spara till Kalkylark"):
