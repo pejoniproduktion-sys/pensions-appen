@@ -89,7 +89,7 @@ for i in range(1, len(aldrar_t1)):
     ins_isk = arlig_isk_ins if age <= 65 else 0
     ins_tjp = arlig_tjp_ins if age <= 65 else 0
     
-    # ISK växer med insättning och avkastning, sedan dras den årliga schablonskatten
+    # ISK växer med insättning och avkastning, sedan dras den årliga schablonskatten från kapitalet
     isk_brutto_ar = (t1_isk[-1] + ins_isk) * avk_faktor_t1
     isk_skatt_ar = isk_brutto_ar * (isk_skatt_procent / 100)
     t1_isk.append(isk_brutto_ar - isk_skatt_ar)
@@ -364,7 +364,7 @@ with tab2:
         
         s_isk *= avk_faktor; s_aktie *= avk_faktor; s_tjp *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
         
-        # ISK Årlig schablonskatt dras från kapitalet
+        # ISK Årlig schablonskatt dras direkt från kapitalet varje år
         s_isk -= (s_isk * (isk_skatt_procent / 100))
         
         s_allm *= avk_faktor_allman
@@ -380,7 +380,7 @@ with tab2:
     # --- NY GRAF: SKATT VS NETTO ---
     st.markdown("---")
     st.subheader(f"💰 2. Din Inkomst & Skatt över tid (Brutto{inflations_text})")
-    st.info("Här ser du brutto, netto och skatt sammanflätat. Den gröna stapeln är pengarna som landar på bankkontot. Den röda stapeln är skatten som systemet måste betala in från dina konton för att nettot ska stämma.\n\n*Notera: Denna graf visar alltid Brutto (Netto + Skatt) oavsett din globala inställning, för att kunna demonstrera skatteeffekten.*")
+    st.info(f"Här ser du brutto, netto och **uttagsskatt** sammanflätat. Den gröna stapeln är inkomsten som landar på bankkontot. Den röda stapeln är den inkomst- eller kapitalskatt som utlöses vid själva uttaget.\n\n*(💡 Notera: Den årliga ISK-schablonskatten på {isk_skatt_procent} % syns inte som en röd stapel här, eftersom den betalas löpande och dras direkt från ditt kapital bakom kulisserna, inte vid uttagstillfället. Denna graf visar alltid Brutto oavsett din globala inställning.)*")
     
     sim_uttag_df_filtered = sim_uttag_df[sim_uttag_df.index >= start_alder].copy().round(0).astype(int)
     skattesats_pension_lista_sim, netto_lista_sim, skatt_kr_lista, ingaende_saldo_lista, total_brutto_lista = [], [], [], [], []
@@ -414,12 +414,12 @@ with tab2:
     df_skatt_graf = pd.DataFrame({
         'Ålder': sim_uttag_df_filtered.index,
         'I plånboken (Netto)': netto_lista_sim,
-        'Inbetald Skatt': skatt_kr_lista
+        'Inbetald Uttagsskatt': skatt_kr_lista
     })
     
-    fig_skatt = px.bar(df_skatt_graf, x='Ålder', y=['I plånboken (Netto)', 'Inbetald Skatt'], 
+    fig_skatt = px.bar(df_skatt_graf, x='Ålder', y=['I plånboken (Netto)', 'Inbetald Uttagsskatt'], 
                        labels={'value': f'Belopp (kr){inflations_text}', 'variable': 'Kategori'},
-                       color_discrete_map={'I plånboken (Netto)': '#4CAF50', 'Inbetald Skatt': '#F44336'})
+                       color_discrete_map={'I plånboken (Netto)': '#4CAF50', 'Inbetald Uttagsskatt': '#F44336'})
     fig_skatt.update_layout(barmode='stack', hovermode="x unified", legend_title="")
     st.plotly_chart(fig_skatt, use_container_width=True)
 
@@ -465,11 +465,18 @@ with tab2:
         forsta_aret_skatt = 0
         forsta_aret_brutto = forsta_aret_uttag
 
+    # För att Helikoptervyn ska vara exakt måste vi beräkna hur stor del av kapitalet som är ISK vid start, 
+    # så att vi kan dra av motsvarande schablonskatt även i klumpsumman.
+    if start_alder_sim in sim_df_area.index and simulerat_startkapital > 0:
+        isk_andel_helikopter = sim_df_area.loc[start_alder_sim, "ISK"] / simulerat_startkapital
+    else:
+        isk_andel_helikopter = 0.0
+
     forsta_aret_avkastning = simulerat_startkapital * (faktisk_avk_ar_1 / 100)
     netto_forsta_aret = forsta_aret_avkastning - forsta_aret_uttag
     
     with st.expander(f"🧐 Så fungerar ditt startår vid {start_alder_sim} års ålder (Klicka för insyn)", expanded=True):
-        st.write(f"För att få ut ditt mål på **{int(forsta_aret_netto):,} kr netto**, drar systemet **{int(forsta_aret_brutto):,} kr brutto** från dina konton (inkl. **{int(forsta_aret_skatt):,} kr** i skatt).".replace(',', ' '))
+        st.write(f"För att få ut ditt mål på **{int(forsta_aret_netto):,} kr netto**, drar systemet **{int(forsta_aret_brutto):,} kr brutto** från dina konton (inkl. **{int(forsta_aret_skatt):,} kr** i uttagsskatt).".replace(',', ' '))
         st.write(f"Eftersom du valt att visa grafen i **{skatte_text}**, slåss ditt {skatte_text}kapital nu mot detta {skatte_text}uttag:")
         st.markdown(f"**+ Årets avkastning ({faktisk_avk_ar_1} %):** {int(forsta_aret_avkastning):,} kr".replace(',', ' '))
         st.markdown(f"**- Hela årets uttag ({skatte_text}):** - {int(forsta_aret_uttag):,} kr".replace(',', ' '))
@@ -488,7 +495,15 @@ with tab2:
         sim_ar.append(ar)
         sim_kapital.append(max(0, nuvarande_kap))
         arets_avk_procent = faktisk_avk_ar_1 if (anvand_faktisk_avk and i == 0) else dash_avkastning
+        
+        # 1. Kapitalet utvecklas och vi drar uttaget
         nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (arets_avk_procent / 100))
+        
+        # 2. Den fiktiva ISK-skatten dras från den uppskattade ISK-andelen
+        isk_skatt_avdrag = nuvarande_kap * isk_andel_helikopter * (isk_skatt_procent / 100)
+        nuvarande_kap -= isk_skatt_avdrag
+        
+        # 3. Inflationsuppräkning på uttaget
         nuvarande_arsuttag *= (1 + (dash_inflation / 100))
         
     sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
