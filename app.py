@@ -465,8 +465,6 @@ with tab2:
         forsta_aret_skatt = 0
         forsta_aret_brutto = forsta_aret_uttag
 
-    # För att Helikoptervyn ska vara exakt måste vi beräkna hur stor del av kapitalet som är ISK vid start, 
-    # så att vi kan dra av motsvarande schablonskatt även i klumpsumman.
     if start_alder_sim in sim_df_area.index and simulerat_startkapital > 0:
         isk_andel_helikopter = sim_df_area.loc[start_alder_sim, "ISK"] / simulerat_startkapital
     else:
@@ -496,14 +494,9 @@ with tab2:
         sim_kapital.append(max(0, nuvarande_kap))
         arets_avk_procent = faktisk_avk_ar_1 if (anvand_faktisk_avk and i == 0) else dash_avkastning
         
-        # 1. Kapitalet utvecklas och vi drar uttaget
         nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (arets_avk_procent / 100))
-        
-        # 2. Den fiktiva ISK-skatten dras från den uppskattade ISK-andelen
         isk_skatt_avdrag = nuvarande_kap * isk_andel_helikopter * (isk_skatt_procent / 100)
         nuvarande_kap -= isk_skatt_avdrag
-        
-        # 3. Inflationsuppräkning på uttaget
         nuvarande_arsuttag *= (1 + (dash_inflation / 100))
         
     sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
@@ -520,6 +513,121 @@ with tab3:
     col_stat1, col_stat2 = st.columns(2)
     with col_stat1: st.metric("Fritt Eget Kapital (Sparade Vinstmedel)", f"{int(bolagets_kassa_start):,} kr".replace(',', ' '))
     with col_stat2: st.metric("Sparat K10-utrymme", f"{int(bolagets_k10_start):,} kr".replace(',', ' '))
+        
+    st.markdown("---")
+    st.markdown("### 🚀 Simulator & Insikt: Hävstången av att spara i bolaget")
+    st.info('*"Vad är de ekonomiska fördelarna med att låta pengarna ligga kvar i aktiebolaget istället för att ta ut dem som utdelning? Att låta vinstmedlen ligga kvar i aktiebolaget ger en kraftig matematisk hävstång, särskilt när man modellerar upp ett långsiktigt pensionskapital och planerar strategiska K10-uttag. Det handlar i grunden om att låta kapitalet arbeta ifred innan staten tar sin andra skatteandel."*')
+    
+    # --- INTERAKTIVA REGLAGE FÖR BOLAGSHÄVSTÅNG ---
+    default_ab_start = int(bolagets_kassa_start) if bolagets_kassa_start > 0 else 1000000
+    default_k10_start = int(bolagets_k10_start) if bolagets_k10_start > 0 else 300000
+    default_slr = max(0.5, round((isk_skatt_procent / 0.30) - 1.0, 2))
+    
+    col_sim_ab1, col_sim_ab2, col_sim_ab3 = st.columns(3)
+    with col_sim_ab1:
+        sim_ab_start = st.number_input("Startkapital i bolaget (kr)", min_value=0, max_value=50000000, value=default_ab_start, step=50000, key="ab_sim_start")
+        sim_ab_arlig_vinst = st.number_input("Ny årlig nettovinst att behålla (kr/år)", min_value=0, max_value=5000000, value=200000, step=25000, key="ab_sim_arlig")
+    with col_sim_ab2:
+        sim_ab_k10_start = st.number_input("Ingående sparat K10-utrymme (kr)", min_value=0, max_value=50000000, value=default_k10_start, step=25000, key="ab_sim_k10")
+        sim_ab_horisont = st.slider("Tidshorisont / Spartid (år)", min_value=5, max_value=25, value=15, step=1, key="ab_sim_ar")
+    with col_sim_ab3:
+        sim_ab_avkastning = st.slider("Förväntad avkastning i KF / ISK (%/år)", min_value=0.0, max_value=15.0, value=float(forvantad_avkastning_procent), step=0.5, key="ab_sim_avk")
+        sim_ab_slr = st.number_input("Statslåneränta (SLR %)", min_value=0.0, max_value=10.0, value=float(default_slr), step=0.1, format="%.2f", key="ab_sim_slr")
+        
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        inkludera_arligt_k10 = st.checkbox("Inkludera årligt nytt schablonutrymme (Förenklingsregeln, ca 209 550 kr/år)", value=True, key="ab_sim_nytt_k10")
+    with col_opt2:
+        marginalskatt_over_k10 = st.slider("Skatt på ev. uttag över K10-gränsen utan trädabolag (%)", min_value=30, max_value=57, value=52, step=1, key="ab_sim_margskatt")
+
+    # --- BERÄKNA DE TRE STRATEGIERNA ÖVER TID ---
+    k10_upprakning_pct = sim_ab_slr + 3.0
+    netto_faktor_kf_isk = (1 + (sim_ab_avkastning / 100)) * (1 - (isk_skatt_procent / 100))
+    
+    ar_lista_ab = list(range(0, sim_ab_horisont + 1))
+    ab_brutto_lista, k10_utrymme_lista = [], []
+    netto_privat_isk_lista, netto_ab_k10_lista, netto_ab_tradabolag_lista = [], [], []
+    
+    curr_ab_brutto = float(sim_ab_start)
+    curr_privat_isk = float(sim_ab_start) * 0.80  # 20 % utdelningsskatt dragen direkt
+    curr_k10 = float(sim_ab_k10_start)
+    
+    for yr in ar_lista_ab:
+        if yr > 0:
+            curr_ab_brutto = (curr_ab_brutto + sim_ab_arlig_vinst) * netto_faktor_kf_isk
+            curr_privat_isk = (curr_privat_isk + (sim_ab_arlig_vinst * 0.80)) * netto_faktor_kf_isk
+            curr_k10 = curr_k10 * (1 + (k10_upprakning_pct / 100))
+            if inkludera_arligt_k10:
+                curr_k10 += 209550
+                
+        # Beräkna vad som blir kvar i plånboken vid exit respektive år
+        uttag_inom_k10 = min(curr_ab_brutto, curr_k10)
+        uttag_over_k10 = max(0.0, curr_ab_brutto - curr_k10)
+        netto_via_k10 = (uttag_inom_k10 * 0.80) + (uttag_over_k10 * (1 - (marginalskatt_over_k10 / 100)))
+        netto_via_tradabolag = curr_ab_brutto * 0.75  # 25 % platt kapitalskatt efter 5 års karens
+        
+        ab_brutto_lista.append(curr_ab_brutto)
+        k10_utrymme_lista.append(curr_k10)
+        netto_privat_isk_lista.append(curr_privat_isk)
+        netto_ab_k10_lista.append(netto_via_k10)
+        netto_ab_tradabolag_lista.append(netto_via_tradabolag)
+
+    # --- NYCKELTAL VID SLUTÅRET ---
+    slut_isk = netto_privat_isk_lista[-1]
+    slut_k10 = netto_ab_k10_lista[-1]
+    slut_trada = netto_ab_tradabolag_lista[-1]
+    
+    col_res1, col_res2, col_res3 = st.columns(3)
+    with col_res1:
+        st.metric(f"1. Direkt utdelning → Privat ISK (År {sim_ab_horisont})", snygga_siffror(slut_isk), "Basnivå (20 % skatt direkt)")
+    with col_res2:
+        diff_k10_vs_isk = slut_k10 - slut_isk
+        st.metric(f"2. Kvar i AB → K10-uttag (År {sim_ab_horisont})", snygga_siffror(slut_k10), f"{int(diff_k10_vs_isk):+,} kr vs Privat ISK".replace(',', ' '))
+    with col_res3:
+        diff_trada_vs_isk = slut_trada - slut_isk
+        st.metric(f"3. Kvar i AB → Trädabolag 25 % (År {sim_ab_horisont})", snygga_siffror(slut_trada), f"{int(diff_trada_vs_isk):+,} kr vs Privat ISK".replace(',', ' '))
+
+    col_ins1, col_ins2 = st.columns([1, 1.35])
+    with col_ins1:
+        st.markdown(f"""
+        **De tre hävstängerna i praktiken:**
+        * **Ränta-på-ränta med en större kapitalbas:** Om du tar ut vinsten som utdelning försvinner 20 % direkt. Låter du pengarna stanna i bolaget har du **100 % av nettovinsten** (efter bolagsskatt) tillgänglig för att investera, exempelvis i en företagsägd kapitalförsäkring (KF). Den extra femtedelen av kapitalet genererar då egen avkastning år efter år, vilket ger en betydligt brantare tillväxtkurva.
+        * **Uppräkning av sparat utdelningsutrymme:** Det gränsbelopp du inte utnyttjar brinner inte inne. Det sparas på din K10-blankett till nästa år och räknas dessutom upp med **statslåneräntan (SLR) + 3 %** (just nu **{k10_upprakning_pct:.2f} %/år** i din simulering). Du bygger upp en växande "bank" av lågbeskattat utrymme som låter dig ta ut betydligt större summor till 20 % skatt längre fram.
+        * **Trädabolag (5:12-regeln) för pension:** Om du i framtiden slutar vara operativt verksam i bolaget kan du låta det vila i **fem år**. Därefter blir dina aktier okvalificerade. Du kan då plocka ut hela det ackumulerade kapitalet till **25 % platt kapitalskatt**, helt utan begränsningar från gränsbeloppet. Detta är en av de absolut effektivaste pensionsstrategierna för fåmansföretagare.
+        """)
+    with col_ins2:
+        df_leverage = pd.DataFrame({
+            "År": ar_lista_ab,
+            "Bruttokapital i AB (KF)": ab_brutto_lista,
+            "Ackumulerat K10-utrymme (SLR + 3 %)": k10_utrymme_lista,
+            "Netto: Direkt utdelning → Privat ISK": netto_privat_isk_lista,
+            "Netto: Kvar i AB → K10-uttag (20 %)": netto_ab_k10_lista,
+            "Netto: Kvar i AB → Trädabolag (25 %)": netto_ab_tradabolag_lista
+        })
+        
+        fig_leverage = px.line(
+            df_leverage,
+            x="År",
+            y=[
+                "Bruttokapital i AB (KF)",
+                "Ackumulerat K10-utrymme (SLR + 3 %)",
+                "Netto: Kvar i AB → K10-uttag (20 %)",
+                "Netto: Kvar i AB → Trädabolag (25 %)",
+                "Netto: Direkt utdelning → Privat ISK"
+            ],
+            title="Kapital- och Skatteutveckling: Kvar i AB vs Direkt Utdelning",
+            color_discrete_map={
+                "Bruttokapital i AB (KF)": "#9E9E9E",
+                "Ackumulerat K10-utrymme (SLR + 3 %)": "#2196F3",
+                "Netto: Kvar i AB → K10-uttag (20 %)": "#4CAF50",
+                "Netto: Kvar i AB → Trädabolag (25 %)": "#FF9800",
+                "Netto: Direkt utdelning → Privat ISK": "#F44336"
+            }
+        )
+        fig_leverage.update_traces(hovertemplate="%{y:,.0f} kr")
+        fig_leverage.update_layout(hovermode="x unified", legend_title="Strategi / Nyckeltal", yaxis_title="Belopp (kr)", margin=dict(t=45, b=10))
+        st.plotly_chart(fig_leverage, use_container_width=True)
+        st.caption(f"💡 Beräkningen använder samma årliga avkastning ({sim_ab_avkastning} %) och schablon-/avkastningsskatt ({isk_skatt_procent} %) för både företagsägd KF och privat ISK. Trädabolagsregeln kräver att bolaget legat vilande i minst 5 hela beskattningsår.")
         
     st.markdown("---")
     st.markdown("### 🧮 Kalkylator 68+: K10-Utdelning vs Lön (7%-metoden)")
@@ -561,7 +669,7 @@ with tab4:
     skatte_data = {
         "Pott / Konto": ["Bolagets Kassa (AB)", "ISK", "Aktiekonto", "Allmän Pension", "Tjänstepension", "KPA", "Futur", "IPS", "Pensionsförsäkring"],
         "Beskattning (Före 68)": ["20% Utdelningsskatt (Inom K10)", f"Årlig schablonskatt ({isk_skatt_procent}%) - Skattefritt uttag", "30% kapitalskatt på vinst", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)"],
-        "Beskattning (Efter 68)": ["20% Utdelningsskatt ELLER ~10% som Lön (7%-metoden)", f"Samma ({isk_skatt_procent}%)", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"]
+        "Beskattning (Efter 68)": ["20% Utdelningsskatt ELLER ~10% som Lön (7%-metoden) / 25% Trädabolag", f"Samma ({isk_skatt_procent}%)", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"]
     }
     st.table(pd.DataFrame(skatte_data))
 
