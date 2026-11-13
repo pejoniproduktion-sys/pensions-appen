@@ -12,8 +12,8 @@ st.set_page_config(page_title="Pensionskalkylator", page_icon="💰", layout="wi
 conn = st.connection("gsheets", type=GSheetsConnection)
 sheet_url = "https://docs.google.com/spreadsheets/d/1WI1KfXWkygOVdL8XxWiHprzNyCax0cIowxzthBta_3I/edit?gid=0#gid=0"
 
-# Läser in 15 rader för att få med ISK-skatten
-df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=15, header=None)
+# Läser in 30 rader för att ha god marginal och inte krocka med befintlig data
+df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=30, header=None)
 
 def get_setting_val(row_index, col_index=1):
     try:
@@ -43,8 +43,13 @@ s_pf_start = get_setting_val(12)
 arlig_isk_ins = get_setting_val(7)
 arlig_tjp_ins = get_setting_val(9)
 
-# Hämta sparad ISK-skatt från rad 14 (index 13). Saknas den används 1.086% som standard för 2024.
-isk_skatt_procent = get_setting_val(13) if get_setting_val(13) > 0 else 1.086
+# Hämta sparad ISK-skatt från rad 25 (index 24) för att undvika krock med Totalsaldo
+isk_skatt_raw = get_setting_val(24)
+# Säkerhetsspärr: Om cellen är tom eller innehåller ett orimligt värde (> 5%), använd default.
+if 0.0 < isk_skatt_raw <= 5.0:
+    isk_skatt_procent = isk_skatt_raw
+else:
+    isk_skatt_procent = 1.086
 
 # --- GLOBALA INSTÄLLNINGAR (TOPPEN AV APPEN) ---
 st.title("Din Pensions-Dashboard 💰")
@@ -662,7 +667,7 @@ with tab5:
                         {'range': 'Futur_Pension', 'values': [[new_futur]]},
                         {'range': 'Bolagets_Kassa', 'values': [[new_bolagskassa]]},
                         {'range': 'Sparat_K10', 'values': [[new_k10]]},
-                        {'range': 'B14', 'values': [[new_isk_skatt]]}
+                        {'range': 'B25', 'values': [[new_isk_skatt]]}
                     ]
                     sh.sheet1.batch_update(batch_updates)
                     
