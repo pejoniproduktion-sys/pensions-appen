@@ -12,7 +12,8 @@ st.set_page_config(page_title="Pensionskalkylator", page_icon="💰", layout="wi
 conn = st.connection("gsheets", type=GSheetsConnection)
 sheet_url = "https://docs.google.com/spreadsheets/d/1WI1KfXWkygOVdL8XxWiHprzNyCax0cIowxzthBta_3I/edit?gid=0#gid=0"
 
-df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=14, header=None)
+# Läser in 15 rader för att få med ISK-skatten
+df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=15, header=None)
 
 def get_setting_val(row_index, col_index=1):
     try:
@@ -41,6 +42,9 @@ s_pf_start = get_setting_val(12)
 
 arlig_isk_ins = get_setting_val(7)
 arlig_tjp_ins = get_setting_val(9)
+
+# Hämta sparad ISK-skatt från rad 14 (index 13). Saknas den används 1.086% som standard för 2024.
+isk_skatt_procent = get_setting_val(13) if get_setting_val(13) > 0 else 1.086
 
 # --- GLOBALA INSTÄLLNINGAR (TOPPEN AV APPEN) ---
 st.title("Din Pensions-Dashboard 💰")
@@ -80,7 +84,11 @@ for i in range(1, len(aldrar_t1)):
     ins_isk = arlig_isk_ins if age <= 65 else 0
     ins_tjp = arlig_tjp_ins if age <= 65 else 0
     
-    t1_isk.append((t1_isk[-1] + ins_isk) * avk_faktor_t1)
+    # ISK växer med insättning och avkastning, sedan dras den årliga schablonskatten
+    isk_brutto_ar = (t1_isk[-1] + ins_isk) * avk_faktor_t1
+    isk_skatt_ar = isk_brutto_ar * (isk_skatt_procent / 100)
+    t1_isk.append(isk_brutto_ar - isk_skatt_ar)
+    
     t1_tjp.append((t1_tjp[-1] + ins_tjp) * avk_faktor_t1)
     t1_aktie.append(t1_aktie[-1] * avk_faktor_t1)
     t1_ips.append(t1_ips[-1] * avk_faktor_t1)
@@ -350,6 +358,10 @@ with tab2:
         ut_isk.append(arets_uttag["ISK"]); ut_bolag.append(arets_uttag.get("Bolagets Kassa", 0)); ut_aktie.append(arets_uttag["Aktiekonto"]); ut_tjp.append(arets_uttag["Tjänstepension"]); ut_ips.append(arets_uttag["IPS"]); ut_pf.append(arets_uttag["PF"]); ut_allm.append(arets_uttag["Allmän Pension"]); ut_kpa.append(arets_uttag["KPA"]); ut_futur.append(arets_uttag["Futur"])
         
         s_isk *= avk_faktor; s_aktie *= avk_faktor; s_tjp *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
+        
+        # ISK Årlig schablonskatt dras från kapitalet
+        s_isk -= (s_isk * (isk_skatt_procent / 100))
+        
         s_allm *= avk_faktor_allman
         s_bolag *= avk_faktor_bolag
 
@@ -528,8 +540,8 @@ with tab4:
     st.subheader("📚 Pensionsskolan: Så beskattas dina potter")
     skatte_data = {
         "Pott / Konto": ["Bolagets Kassa (AB)", "ISK", "Aktiekonto", "Allmän Pension", "Tjänstepension", "KPA", "Futur", "IPS", "Pensionsförsäkring"],
-        "Beskattning (Före 68)": ["20% Utdelningsskatt (Inom K10)", "Skatt på schablon (0%)", "30% kapitalskatt på vinst", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)"],
-        "Beskattning (Efter 68)": ["20% Utdelningsskatt ELLER ~10% som Lön (7%-metoden)", "Samma", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"]
+        "Beskattning (Före 68)": ["20% Utdelningsskatt (Inom K10)", f"Årlig schablonskatt ({isk_skatt_procent}%) - Skattefritt uttag", "30% kapitalskatt på vinst", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)", "Inkomstskatt (ca 32%)"],
+        "Beskattning (Efter 68)": ["20% Utdelningsskatt ELLER ~10% som Lön (7%-metoden)", f"Samma ({isk_skatt_procent}%)", "Samma (30% på vinst)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)", "Sänkt Inkomstskatt (ca 22%)"]
     }
     st.table(pd.DataFrame(skatte_data))
 
@@ -619,9 +631,15 @@ with tab5:
                 new_futur = st.number_input("Futur Pension", value=int(futur_start), step=1000)
                 
             st.markdown("---")
-            new_privatspar_ar = st.number_input("Privat sparande ISK (kr/år)", value=int(arlig_isk_ins), step=1000)
-            st.caption("💡 Målsättning: ca 136 000 kr/år. Spara ner detta belopp för att ändra grundvärdet i kalkylarket.")
-            new_tjp_ins = st.number_input("Bolagets avsättning TJP (kr/år)", value=int(arlig_tjp_ins), step=10000)
+            col_spar1, col_spar2, col_spar3 = st.columns(3)
+            with col_spar1:
+                new_privatspar_ar = st.number_input("Privat sparande ISK (kr/år)", value=int(arlig_isk_ins), step=1000)
+                st.caption("💡 Målsättning: ca 136 000 kr/år.")
+            with col_spar2:
+                new_tjp_ins = st.number_input("Bolagets avsättning TJP (kr/år)", value=int(arlig_tjp_ins), step=10000)
+            with col_spar3:
+                new_isk_skatt = st.number_input("Effektiv Schablonskatt ISK (%/år)", value=float(isk_skatt_procent), step=0.01, format="%.3f")
+                st.caption("💡 Baseras på statslåneräntan (30 nov året före). Exempel 2024: 1.086%.")
                 
             if st.form_submit_button("Spara till Kalkylark"):
                 try:
@@ -643,7 +661,8 @@ with tab5:
                         {'range': 'KPA_Traditionell', 'values': [[new_kpa]]},
                         {'range': 'Futur_Pension', 'values': [[new_futur]]},
                         {'range': 'Bolagets_Kassa', 'values': [[new_bolagskassa]]},
-                        {'range': 'Sparat_K10', 'values': [[new_k10]]}
+                        {'range': 'Sparat_K10', 'values': [[new_k10]]},
+                        {'range': 'B14', 'values': [[new_isk_skatt]]}
                     ]
                     sh.sheet1.batch_update(batch_updates)
                     
