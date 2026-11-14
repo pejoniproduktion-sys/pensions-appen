@@ -12,7 +12,6 @@ st.set_page_config(page_title="Pensionskalkylator", page_icon="💰", layout="wi
 conn = st.connection("gsheets", type=GSheetsConnection)
 sheet_url = "https://docs.google.com/spreadsheets/d/1WI1KfXWkygOVdL8XxWiHprzNyCax0cIowxzthBta_3I/edit?gid=0#gid=0"
 
-# Läser in 35 rader för att ha god marginal och inte krocka med befintlig data
 df_settings = conn.read(spreadsheet=sheet_url, ttl=600, nrows=35, header=None)
 
 def get_setting_val(row_index, col_index=1):
@@ -34,7 +33,6 @@ futur_start = get_setting_val(3, 4) if get_setting_val(3, 4) > 0 else 9454
 bolagets_kassa_start = get_setting_val(5, 4) 
 bolagets_k10_start = get_setting_val(6, 4) 
 
-# Hämta Totalt Fritt Eget Kapital från rad 26 (index 25) om det finns sparat, annars samma som kassa
 totalt_fritt_start = get_setting_val(25) if get_setting_val(25) > 0 else bolagets_kassa_start
 
 s_isk_start = get_setting_val(6)
@@ -46,14 +44,13 @@ s_pf_start = get_setting_val(12)
 arlig_isk_ins = get_setting_val(7)
 arlig_tjp_ins = get_setting_val(9)
 
-# Hämta sparad ISK-skatt från rad 25 (index 24)
 isk_skatt_raw = get_setting_val(24)
 if 0.0 < isk_skatt_raw <= 5.0:
     isk_skatt_procent = isk_skatt_raw
 else:
     isk_skatt_procent = 1.086
 
-# --- GLOBALA INSTÄLLNINGAR (TOPPEN AV APPEN) ---
+# --- GLOBALA INSTÄLLNINGAR ---
 st.title("Din Pensions-Dashboard 💰")
 st.markdown("##### Välj hur du vill visa värden i hela kalkylatorn:")
 
@@ -75,7 +72,7 @@ pott_namn_ren = ['ISK', 'Bolagets Kassa', 'Aktiekonto', 'Allmän Pension', 'Tjä
 skatte_text = "Netto" if "Netto" in skatte_läge else "Brutto"
 inflations_text = f" (Köpkraft)" if simulera_inflation else ""
 
-# --- BYGG UPP GRUNDPROGNOSEN FÖR DASHBOARD (FLIK 1) ---
+# --- GRUNDPROGNOS (FLIK 1) ---
 aldrar_t1 = list(range(aktuell_alder, 91))
 t1_isk, t1_tjp, t1_aktie, t1_ips, t1_pf = [s_isk_start], [s_tjp_start], [s_aktie_start], [s_ips_start], [s_pf_start]
 t1_allm, t1_kpa, t1_futur = [allman_start], [kpa_start], [futur_start]
@@ -229,17 +226,10 @@ with tab1:
     st.markdown("---")
     prognos_fig = rita_stapeldiagram_med_total(chart_df, 'Ålder', pott_lista, y_titel=f"Belopp (kr) | {skatte_text}{inflations_text}")
     st.plotly_chart(prognos_fig, use_container_width=True)
-    
-    if historik_finns:
-        st.markdown("---")
-        st.subheader("📚 Historisk Tillväxt (Graf)")
-        clean_historik['År'] = clean_historik['År'].astype(str) 
-        fig_hist = px.bar(clean_historik, x='År', y='Totalt', labels={'Totalt': f"Totalt Värde"})
-        st.plotly_chart(fig_hist, use_container_width=True)
 
 with tab2:
     st.subheader(f"🔮 Uttag & Scenarier: Avancerad Skattesmart Uttagsmotor")
-    st.info("Här styr ditt önskade **Nettouttag** precis allt. Systemet räknar automatiskt ut hur mycket brutto som krävs från olika konton för att nå dit varje år.")
+    st.info("Här styr ditt önskade **Nettouttag** precis allt.")
     
     col_top1, col_top2 = st.columns([1, 1])
     with col_top1:
@@ -251,8 +241,6 @@ with tab2:
             c_i1, c_i2 = st.columns(2)
             with c_i1:
                 sim_ny_isk_ins = st.number_input("Privat sparande ISK (kr/år)", value=int(arlig_isk_ins), step=1000)
-                st.caption("💡 Målsättning: ca 136 000 kr/år (Löpande sparande fram till startålder)")
-                
                 sim_ny_tjp_ins = st.number_input("Avsättning TJP (kr/år)", value=int(arlig_tjp_ins), step=10000)
                 start_alder_allman = st.slider("Start Allmän Pension", 60, 75, 68)
                 utb_tid_allman = st.slider("Utb.tid Allmän (år)", 5, 40, 20)
@@ -273,7 +261,6 @@ with tab2:
     st.markdown("---")
     anvand_7_procent = st.checkbox("Aktivera 7-procentsmetoden (Lågbeskattad lön från bolaget från 68 år)", value=True)
     
-    # --- UTTAGSMOTORN KÖR --
     s_isk, s_tjp, s_aktie, s_ips, s_pf = s_isk_start, s_tjp_start, s_aktie_start, s_ips_start, s_pf_start
     s_allm, s_kpa, s_futur, s_bolag = allman_start, kpa_start, futur_start, bolagets_kassa_start
     s_k10 = bolagets_k10_start
@@ -286,9 +273,7 @@ with tab2:
     
     for age in range(aktuell_alder, 91):
         aldrar.append(age)
-        
         n_isk.append(max(0, s_isk)); n_bolag.append(max(0, s_bolag)); n_tjp.append(max(0, s_tjp)); n_aktie.append(max(0, s_aktie)); n_ips.append(max(0, s_ips)); n_pf.append(max(0, s_pf)); n_allm.append(max(0, s_allm)); n_kpa.append(max(0, s_kpa)); n_futur.append(max(0, s_futur))
-        
         s_k10 += 204325
         
         if age < start_alder:
@@ -300,7 +285,6 @@ with tab2:
             ink_skatt_nu = 0.22 if age >= 68 else 0.32
             
             arets_uttag = {"ISK": 0, "Bolagets Kassa": 0, "Aktiekonto": 0, "Allmän Pension": 0, "Tjänstepension": 0, "KPA": 0, "Futur": 0, "IPS": 0, "PF": 0}
-            
             pension_pots_config = [("Allmän Pension", s_allm, start_alder_allman, utb_tid_allman), ("Tjänstepension", s_tjp, start_alder_tjp, utb_tid_tjp), ("KPA", s_kpa, start_alder_kpa, utb_tid_kpa), ("Futur", s_futur, start_alder_futur, utb_tid_futur), ("IPS", s_ips, start_alder_ips, utb_tid_ips), ("PF", s_pf, start_alder_pf, utb_tid_pf)]
             lopande_brutto_pension = 0
             for namn, saldo, s_alder, utb_tid in pension_pots_config:
@@ -309,15 +293,12 @@ with tab2:
                     if ar_i_uttag < utb_tid:
                         resterande_ar = utb_tid - ar_i_uttag
                         onipat_brutto = saldo / resterande_ar
-                        
                         if lopande_brutto_pension + onipat_brutto > STATLIG_SKATT_GRANS_BRUTTO:
                             onipat_brutto = max(0, STATLIG_SKATT_GRANS_BRUTTO - lopande_brutto_pension)
-                            
                         if onipat_brutto > 0:
                             arets_uttag[namn] = onipat_brutto
                             lopande_brutto_pension += onipat_brutto
                             kvar_netto_att_fa_ut -= onipat_brutto * (1 - ink_skatt_nu)
-                            
                             if namn == "Allmän Pension": s_allm -= onipat_brutto
                             elif namn == "Tjänstepension": s_tjp -= onipat_brutto
                             elif namn == "KPA": s_kpa -= onipat_brutto
@@ -345,9 +326,7 @@ with tab2:
                             uttag_brutto = saldo_brutto; uttag_netto = max_netto
                         else:
                             uttag_netto = kvar_netto_att_fa_ut; uttag_brutto = kvar_netto_att_fa_ut / (1 - skatt)
-                            
                         kvar_netto_att_fa_ut -= uttag_netto
-                        
                         if flex_namn == "ISK": s_isk -= uttag_brutto; arets_uttag["ISK"] += uttag_brutto
                         elif flex_namn in ["Bolagets Kassa K10", "Bolagets Kassa 7-procent"]:
                             s_bolag -= uttag_brutto
@@ -355,7 +334,6 @@ with tab2:
                             arets_uttag["Bolagets Kassa"] += uttag_brutto
                         elif flex_namn == "Bolagets Kassa Lön": s_bolag -= uttag_brutto; arets_uttag["Bolagets Kassa"] += uttag_brutto
                         elif flex_namn == "Aktiekonto": s_aktie -= uttag_brutto; arets_uttag["Aktiekonto"] += uttag_brutto
-                        
             elif kvar_netto_att_fa_ut < 0:
                 s_isk += abs(kvar_netto_att_fa_ut)
                 arets_uttag["ISK"] -= abs(kvar_netto_att_fa_ut)
@@ -364,7 +342,6 @@ with tab2:
         
         s_isk *= avk_faktor; s_aktie *= avk_faktor; s_tjp *= avk_faktor; s_ips *= avk_faktor; s_pf *= avk_faktor; s_kpa *= avk_faktor; s_futur *= avk_faktor
         s_isk -= (s_isk * (isk_skatt_procent / 100))
-        
         s_allm *= avk_faktor_allman
         s_bolag *= avk_faktor_bolag
 
@@ -374,237 +351,44 @@ with tab2:
     st.subheader(f"📊 1. Saldoutveckling från {start_alder} år (Visar {skatte_text}{inflations_text})")
     fig_sim = rita_stapeldiagram_med_total(sim_df_area, 'Ålder', pott_namn_ren, y_titel=f"Belopp (kr) | {skatte_text}{inflations_text}")
     st.plotly_chart(fig_sim, use_container_width=True)
-    
-    st.markdown("---")
-    st.subheader(f"💰 2. Din Inkomst & Skatt över tid (Brutto{inflations_text})")
-    st.info(f"Här ser du brutto, netto och **uttagsskatt** sammanflätat.\n\n*(💡 Notera: Den årliga ISK-schablonskatten på {isk_skatt_procent} % syns inte som en röd stapel här, eftersom den dras direkt från kapitalet bakom kulisserna).*")
-    
-    sim_uttag_df_filtered = sim_uttag_df[sim_uttag_df.index >= start_alder].copy().round(0).astype(int)
-    skattesats_pension_lista_sim, netto_lista_sim, skatt_kr_lista, ingaende_saldo_lista, total_brutto_lista = [], [], [], [], []
-    
-    for age, row in sim_uttag_df_filtered.iterrows():
-        ink_skatt = 0.32 if age < 68 else 0.22
-        pens_uttag = max(0, row['Pensionsförsäkring']) + max(0, row['IPS']) + max(0, row['Futur Pension']) + max(0, row['KPA Traditionell']) + max(0, row['Tjänstepension']) + max(0, row['Allmän Pension'])
-        aktie_uttag, isk_uttag, bolag_uttag = row['Aktiekonto'], row['ISK'], max(0, row['Bolagets Kassa'])
-        
-        brutto = pens_uttag + aktie_uttag + bolag_uttag + isk_uttag
-        netto = (pens_uttag * (1 - ink_skatt)) + (aktie_uttag * 0.70) + (bolag_uttag * 0.80) + isk_uttag
-        skatt_kr = brutto - netto
-        
-        total_brutto_lista.append(int(brutto))
-        netto_lista_sim.append(int(netto))
-        skatt_kr_lista.append(int(skatt_kr))
-        skattesats_pension_lista_sim.append(f"{int(ink_skatt*100)} %" if pens_uttag > 0 else "-")
-
-        belastade_konton = []
-        for pott in pott_namn_ren:
-            if row[pott] > 0: belastade_konton.append(f"{pott}: {int(sim_df_area.loc[age, pott]):,} kr".replace(',', ' '))
-        ingaende_saldo_lista.append(" | ".join(belastade_konton) if belastade_konton else "Inga uttag")
-
-    sim_uttag_df_filtered['Totalt Uttag (Brutto)'] = total_brutto_lista
-    sim_uttag_df_filtered['Inbetald Skatt (kr)'] = skatt_kr_lista
-    sim_uttag_df_filtered['I plånboken (Netto)'] = netto_lista_sim
-    sim_uttag_df_filtered['Skattesats (Pensioner)'] = skattesats_pension_lista_sim
-    sim_uttag_df_filtered['Ingående Saldo (Före uttag)'] = ingaende_saldo_lista
-    
-    df_skatt_graf = pd.DataFrame({
-        'Ålder': sim_uttag_df_filtered.index,
-        'I plånboken (Netto)': netto_lista_sim,
-        'Inbetald Uttagsskatt': skatt_kr_lista
-    })
-    
-    fig_skatt = px.bar(df_skatt_graf, x='Ålder', y=['I plånboken (Netto)', 'Inbetald Uttagsskatt'], 
-                       labels={'value': f'Belopp (kr){inflations_text}', 'variable': 'Kategori'},
-                       color_discrete_map={'I plånboken (Netto)': '#4CAF50', 'Inbetald Uttagsskatt': '#F44336'})
-    fig_skatt.update_layout(barmode='stack', hovermode="x unified", legend_title="")
-    st.plotly_chart(fig_skatt, use_container_width=True)
-
-    with st.expander("Tabell: Detaljerad Uttagsplan (Med exakt skatt i kronor)"):
-        cols = ['Totalt Uttag (Brutto)', 'Inbetald Skatt (kr)', 'I plånboken (Netto)', 'Skattesats (Pensioner)', 'ISK', 'Bolagets Kassa', 'Aktiekonto', 'Allmän Pension', 'Tjänstepension', 'KPA Traditionell', 'Futur Pension', 'IPS', 'Pensionsförsäkring', 'Ingående Saldo (Före uttag)']
-        st.dataframe(sim_uttag_df_filtered[cols].astype(object), use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("🎢 3. Helikoptervyn: Stresstest av hela kapitalet")
-    st.info("I denna vy drar vi bort kalkylatorns komplexa lager och simulerar hela portföljen som en gemensam klumpsumma.")
-    
-    col_sim_1, col_sim_2 = st.columns(2)
-    with col_sim_1:
-        start_alder_sim = st.slider("Välj startålder för Helikoptersimulering", min_value=60, max_value=75, value=max(60, start_alder))
-        simulerat_startkapital = sim_df_area.loc[start_alder_sim].sum() if start_alder_sim in sim_df_area.index else 0
-        st.metric(f"Ditt Totala Startkapital ({skatte_text}{inflations_text})", f"{int(simulerat_startkapital):,} kr".replace(',', ' '))
-        
-    with col_sim_2:
-        dash_avkastning = st.slider("Långsiktig förväntad avkastning på portföljen (%)", min_value=0.0, max_value=12.0, value=forvantad_avkastning_procent, step=0.5, key="dash_avk")
-        anvand_faktisk_avk = st.checkbox("📍 Använd avvikande/faktisk avkastning just i år", value=False)
-        if anvand_faktisk_avk:
-            faktisk_avk_ar_1 = st.number_input("Faktisk avkastning i år (%)", min_value=-50.0, max_value=100.0, value=10.0, step=0.5)
-        else:
-            faktisk_avk_ar_1 = dash_avkastning
-
-        dash_inflation = st.slider("Årlig inflation (ökning av uttag) (%)", min_value=0.0, max_value=5.0, value=inflations_takt if simulera_inflation else 0.0, step=0.5, key="dash_inf")
-
-    start_idx = start_alder_sim - start_alder
-    if start_idx >= 0 and start_idx < len(sim_uttag_df_filtered):
-        if "Netto" in skatte_läge:
-            forsta_aret_uttag = sim_uttag_df_filtered.iloc[start_idx]['I plånboken (Netto)']
-        else:
-            forsta_aret_uttag = sim_uttag_df_filtered.iloc[start_idx]['Totalt Uttag (Brutto)']
-            
-        forsta_aret_netto = sim_uttag_df_filtered.iloc[start_idx]['I plånboken (Netto)']
-        forsta_aret_skatt = sim_uttag_df_filtered.iloc[start_idx]['Inbetald Skatt (kr)']
-        forsta_aret_brutto = sim_uttag_df_filtered.iloc[start_idx]['Totalt Uttag (Brutto)']
-    else:
-        forsta_aret_uttag = onskat_netto_manad * 12
-        forsta_aret_netto = onskat_netto_manad * 12
-        forsta_aret_skatt = 0
-        forsta_aret_brutto = forsta_aret_uttag
-
-    if start_alder_sim in sim_df_area.index and simulerat_startkapital > 0:
-        isk_andel_helikopter = sim_df_area.loc[start_alder_sim, "ISK"] / simulerat_startkapital
-    else:
-        isk_andel_helikopter = 0.0
-
-    forsta_aret_avkastning = simulerat_startkapital * (faktisk_avk_ar_1 / 100)
-    netto_forsta_aret = forsta_aret_avkastning - forsta_aret_uttag
-    
-    with st.expander(f"🧐 Så fungerar ditt startår vid {start_alder_sim} års ålder", expanded=False):
-        st.write(f"För att få ut ditt mål på **{int(forsta_aret_netto):,} kr netto**, drar systemet **{int(forsta_aret_brutto):,} kr brutto** från dina konton (inkl. **{int(forsta_aret_skatt):,} kr** i uttagsskatt).".replace(',', ' '))
-
-    sim_ar, sim_kapital = [], []
-    nuvarande_kap = simulerat_startkapital
-    nuvarande_arsuttag = forsta_aret_uttag
-    
-    for i, ar in enumerate(range(start_alder_sim, 96)):
-        sim_ar.append(ar)
-        sim_kapital.append(max(0, nuvarande_kap))
-        arets_avk_procent = faktisk_avk_ar_1 if (anvand_faktisk_avk and i == 0) else dash_avkastning
-        
-        nuvarande_kap = (nuvarande_kap - nuvarande_arsuttag) * (1 + (arets_avk_procent / 100))
-        isk_skatt_avdrag = nuvarande_kap * isk_andel_helikopter * (isk_skatt_procent / 100)
-        nuvarande_kap -= isk_skatt_avdrag
-        nuvarande_arsuttag *= (1 + (dash_inflation / 100))
-        
-    sim_data = pd.DataFrame({"Ålder": sim_ar, "Kapital (kr)": sim_kapital})
-    fig_line = px.area(sim_data, x="Ålder", y="Kapital (kr)", title=f"Total kapitalutveckling från {start_alder_sim} år")
-    fig_line.update_traces(fillcolor='rgba(76, 175, 80, 0.2)', line_color='rgba(76, 175, 80, 1)')
-    fig_line.update_layout(hovermode="x unified", xaxis_title="Ålder", yaxis_title=f"Totalt Portföljvärde | {skatte_text}", yaxis_tickformat=",.0f")
-    st.plotly_chart(fig_line, use_container_width=True)
 
 with tab3:
-    st.subheader("⚖️ Företagaren: Aktiebolaget")
+    st.subheader("⚖️ Företagaren: Bokslut & Likviditetsfördelning")
     col_stat1, col_stat2 = st.columns(2)
     with col_stat1: st.metric("Totalt Fritt Eget Kapital (Bokfört)", f"{int(totalt_fritt_start):,} kr".replace(',', ' '))
     with col_stat2: st.metric("Sparat K10-utrymme", f"{int(bolagets_k10_start):,} kr".replace(',', ' '))
         
     st.markdown("---")
-    st.markdown("### 🚀 Simulator & Insikt: Hävstången av att spara i bolaget")
-    st.info('*"Vad är de ekonomiska fördelarna med att låta pengarna ligga kvar i aktiebolaget istället för att ta ut dem som utdelning? Det handlar i grunden om att låta kapitalet arbeta ifred innan staten tar sin andra skatteandel."*')
-    
-    default_ab_start = int(bolagets_kassa_start) if bolagets_kassa_start > 0 else 1000000
-    default_k10_start = int(bolagets_k10_start) if bolagets_k10_start > 0 else 300000
-    default_slr = max(0.5, round((isk_skatt_procent / 0.30) - 1.0, 2))
-    
-    col_sim_ab1, col_sim_ab2, col_sim_ab3 = st.columns(3)
-    with col_sim_ab1:
-        sim_ab_start = st.number_input("Investerat startkapital i KF (kr)", min_value=0, max_value=50000000, value=default_ab_start, step=50000, key="ab_sim_start")
-        sim_ab_arlig_vinst = st.number_input("Ny årlig tillförsel till KF (kr/år)", min_value=0, max_value=5000000, value=200000, step=25000, key="ab_sim_arlig")
-    with col_sim_ab2:
-        sim_ab_k10_start = st.number_input("Ingående sparat K10-utrymme (kr)", min_value=0, max_value=50000000, value=default_k10_start, step=25000, key="ab_sim_k10")
-        sim_ab_horisont = st.slider("Tidshorisont / Spartid (år)", min_value=5, max_value=25, value=15, step=1, key="ab_sim_ar")
-    with col_sim_ab3:
-        sim_ab_avkastning = st.slider("Förväntad avkastning i KF / ISK (%/år)", min_value=0.0, max_value=15.0, value=float(forvantad_avkastning_procent), step=0.5, key="ab_sim_avk")
-        sim_ab_slr = st.number_input("Statslåneränta (SLR %)", min_value=0.0, max_value=10.0, value=float(default_slr), step=0.1, format="%.2f", key="ab_sim_slr")
-        
-    col_opt1, col_opt2 = st.columns(2)
-    with col_opt1:
-        inkludera_arligt_k10 = st.checkbox("Inkludera årligt nytt schablonutrymme (Förenklingsregeln)", value=True, key="ab_sim_nytt_k10")
-    with col_opt2:
-        marginalskatt_over_k10 = st.slider("Skatt på ev. uttag över K10-gränsen utan trädabolag (%)", min_value=30, max_value=57, value=52, step=1, key="ab_sim_margskatt")
+    st.markdown("### 🛠️ Interaktiv Bokslutsguide: Fördela årets överskott")
+    st.info("Använd denna enkla kalkyl vid årets bokslut för att räkna ut vad som finns tillgängligt på företagskontot efter utdelning och skulder, och hur mycket du ska flytta till bolagets Kapitalförsäkring (KF).")
 
-    k10_upprakning_pct = sim_ab_slr + 3.0
-    netto_faktor_kf_isk = (1 + (sim_ab_avkastning / 100)) * (1 - (isk_skatt_procent / 100))
-    
-    ar_lista_ab = list(range(0, sim_ab_horisont + 1))
-    ab_brutto_lista, k10_utrymme_lista = [], []
-    netto_privat_isk_lista, netto_ab_k10_lista, netto_ab_tradabolag_lista = [], [], []
-    
-    curr_ab_brutto = float(sim_ab_start)
-    curr_privat_isk = float(sim_ab_start) * 0.80  
-    curr_k10 = float(sim_ab_k10_start)
-    
-    for yr in ar_lista_ab:
-        if yr > 0:
-            curr_ab_brutto = (curr_ab_brutto + sim_ab_arlig_vinst) * netto_faktor_kf_isk
-            curr_privat_isk = (curr_privat_isk + (sim_ab_arlig_vinst * 0.80)) * netto_faktor_kf_isk
-            curr_k10 = curr_k10 * (1 + (k10_upprakning_pct / 100))
-            if inkludera_arligt_k10:
-                curr_k10 += 209550
-                
-        uttag_inom_k10 = min(curr_ab_brutto, curr_k10)
-        uttag_over_k10 = max(0.0, curr_ab_brutto - curr_k10)
-        netto_via_k10 = (uttag_inom_k10 * 0.80) + (uttag_over_k10 * (1 - (marginalskatt_over_k10 / 100)))
-        netto_via_tradabolag = curr_ab_brutto * 0.75  
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        bok_fritt = st.number_input("1. Fritt Eget Kapital (Enligt Balansräkning)", min_value=0, value=int(totalt_fritt_start), step=10000)
+        bok_utdelning = st.number_input("2. Planerad Utdelning (Netto till dig privat)", min_value=0, value=200000, step=10000)
+        bok_skulder = st.number_input("3. Skatter & Skulder att betala (t.ex. moms, bolagsskatt)", min_value=0, value=50000, step=5000)
+    with col_b2:
+        # Beräkna faktiskt tillgängliga likvida medel
+        beräknad_kassa_1930 = max(0, bok_fritt - bok_utdelning - bok_skulder)
+        st.markdown("#### 📊 Resultat på Företagskontot (Konto 1930)")
+        st.metric("Faktiskt tillgängliga likvida medel", f"{int(beräknad_kassa_1930):,} kr".replace(',', ' '), "Efter utdelning och skulder")
         
-        ab_brutto_lista.append(curr_ab_brutto)
-        k10_utrymme_lista.append(curr_k10)
-        netto_privat_isk_lista.append(curr_privat_isk)
-        netto_ab_k10_lista.append(netto_via_k10)
-        netto_ab_tradabolag_lista.append(netto_via_tradabolag)
+        st.markdown("---")
+        kf_andel_proc = st.slider("Hur stor del av dessa likvida medel vill du flytta till Kapitalförsäkring (KF)? (%)", min_value=0, max_value=100, value=80, step=5)
 
-    slut_isk = netto_privat_isk_lista[-1]
-    slut_k10 = netto_ab_k10_lista[-1]
-    slut_trada = netto_ab_tradabolag_lista[-1]
-    
-    col_res1, col_res2, col_res3 = st.columns(3)
-    with col_res1:
-        st.metric(f"1. Direkt utdelning → Privat ISK (År {sim_ab_horisont})", snygga_siffror(slut_isk), "Basnivå (20 % skatt direkt)")
-    with col_res2:
-        diff_k10_vs_isk = slut_k10 - slut_isk
-        st.metric(f"2. Kvar i AB → K10-uttag (År {sim_ab_horisont})", snygga_siffror(slut_k10), f"{int(diff_k10_vs_isk):+,} kr vs Privat ISK".replace(',', ' '))
-    with col_res3:
-        diff_trada_vs_isk = slut_trada - slut_isk
-        st.metric(f"3. Kvar i AB → Trädabolag 25 % (År {sim_ab_horisont})", snygga_siffror(slut_trada), f"{int(diff_trada_vs_isk):+,} kr vs Privat ISK".replace(',', ' '))
+    # Fördela pottarna
+    summa_till_kf = beräknad_kassa_1930 * (kf_andel_proc / 100)
+    summa_kvar_pa_konto = beräknad_kassa_1930 - summa_till_kf
 
-    col_ins1, col_ins2 = st.columns([1, 1.35])
-    with col_ins1:
-        st.markdown(f"""
-        **De tre hävstängerna i praktiken:**
-        * **Ränta-på-ränta med större kapitalbas:** 100 % av nettovinsten jobbar i bolagets KF istället för 80 % efter direkt utdelning.
-        * **K10-uppräkning:** Sparat utrymme växer med **{k10_upprakning_pct:.2f} %/år** (SLR + 3 %).
-        * **Trädabolag (5:12):** Låt bolaget vila i 5 år och ta ut hela kassan till **25 % platt kapitalskatt**.
-        """)
-    with col_ins2:
-        df_leverage = pd.DataFrame({
-            "År": ar_lista_ab,
-            "Bruttokapital i AB (KF)": ab_brutto_lista,
-            "Ackumulerat K10-utrymme": k10_utrymme_lista,
-            "Netto: Direkt utdelning → Privat ISK": netto_privat_isk_lista,
-            "Netto: Kvar i AB → K10-uttag (20 %)": netto_ab_k10_lista,
-            "Netto: Kvar i AB → Trädabolag (25 %)": netto_ab_tradabolag_lista
-        })
-        
-        fig_leverage = px.line(
-            df_leverage,
-            x="År",
-            y=[
-                "Bruttokapital i AB (KF)",
-                "Ackumulerat K10-utrymme",
-                "Netto: Kvar i AB → K10-uttag (20 %)",
-                "Netto: Kvar i AB → Trädabolag (25 %)",
-                "Netto: Direkt utdelning → Privat ISK"
-            ],
-            title="Kapital- och Skatteutveckling",
-            color_discrete_map={
-                "Bruttokapital i AB (KF)": "#9E9E9E",
-                "Ackumulerat K10-utrymme": "#2196F3",
-                "Netto: Kvar i AB → K10-uttag (20 %)": "#4CAF50",
-                "Netto: Kvar i AB → Trädabolag (25 %)": "#FF9800",
-                "Netto: Direkt utdelning → Privat ISK": "#F44336"
-            }
-        )
-        fig_leverage.update_traces(hovertemplate="%{y:,.0f} kr")
-        fig_leverage.update_layout(hovermode="x unified", legend_title="Strategi", yaxis_title="Belopp (kr)", margin=dict(t=45, b=10))
-        st.plotly_chart(fig_leverage, use_container_width=True)
+    st.markdown("---")
+    st.subheader("💡 Siffror att mata in vid din nästa storstädning (Flik 5):")
+    col_res_a, col_res_b = st.columns(2)
+    with col_res_a:
+        st.success(f"📈 **Bolagets Kassa i KF (Investerat):**\n### {int(summa_till_kf):,} kr".replace(',', ' '))
+        st.caption("Detta är beloppet du matar in i fältet *Bolagets Kassa i KF* under Flik 5 för att driva tillväxtprognosen.")
+    with col_res_b:
+        st.info(f"🏦 **Likviditetsbuffert kvar på Konto 1930:**\n### {int(summa_kvar_pa_konto):,} kr".replace(',', ' '))
+        st.caption("Detta är det belopp som ligger kvar rent operativt på företagets vanliga bankkonto för löpande kostnader.")
 
     st.markdown("---")
     st.markdown("### 🧮 Kalkylator 68+: K10-Utdelning vs Lön (7%-metoden)")
