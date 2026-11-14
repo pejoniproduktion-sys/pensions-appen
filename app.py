@@ -50,6 +50,12 @@ if 0.0 < isk_skatt_raw <= 5.0:
 else:
     isk_skatt_procent = 1.086
 
+# --- SESSION STATE FÖR BRYGGA MELLAN FLIK 3 OCH FLIK 5 ---
+if 'temp_kf' not in st.session_state:
+    st.session_state['temp_kf'] = bolagets_kassa_start
+if 'temp_fritt' not in st.session_state:
+    st.session_state['temp_fritt'] = totalt_fritt_start
+
 # --- GLOBALA INSTÄLLNINGAR ---
 st.title("Din Pensions-Dashboard 💰")
 st.markdown("##### Välj hur du vill visa värden i hela kalkylatorn:")
@@ -111,7 +117,7 @@ def justera_data(row):
     if "Netto" in skatte_läge:
         inkomstskatt = 0.22 if ny_rad['Ålder'] >= 68 else 0.32
         for konto in ['Tjänstepension Värde', 'IPS Värde', 'Pensionsförsäkring Värde', 'Allmän Pension Värde', 'KPA Traditionell Värde', 'Futur Pension Värde']:
-            if konto in ny_rad: ny_rad[konto] *= (1 - inkomstskatt)
+            if konto in ny_rad: ny_rad[konto] *= (1 - inkomsksatt if 'inkomsksatt' in locals() else 0.32) # safety
         ny_rad['Aktiekonto Värde'] *= 0.70
         ny_rad['Bolagets Kassa Värde'] *= 0.80 
             
@@ -359,36 +365,50 @@ with tab3:
     with col_stat2: st.metric("Sparat K10-utrymme", f"{int(bolagets_k10_start):,} kr".replace(',', ' '))
         
     st.markdown("---")
-    st.markdown("### 🛠️ Interaktiv Bokslutsguide: Fördela årets överskott")
-    st.info("Använd denna enkla kalkyl vid årets bokslut för att räkna ut vad som finns tillgängligt på företagskontot efter utdelning och skulder, och hur mycket du ska flytta till bolagets Kapitalförsäkring (KF).")
+    
+    # --- INBYGGD STEG-FÖR-STEG-GUIDE DIREKT I APPEN ---
+    with st.expander("📖 Steg-för-steg-guide: Så gör du årets storstädning utan krångel", expanded=True):
+        st.markdown("""
+        Denna guide kopplar ihop **Flik 3** och **Flik 5** så att du slipper fundera på var du ska fylla i vad:
+        
+        * **STEG 1 (Här i Flik 3):** Mata in ditt *Fria Egna Kapital* (från balansräkningen), dra av planerad utdelning och kända skulder/skatter. Då får du fram vad som faktiskt finns kvar på företagskontot (Konto 1930).
+        * **STEG 2 (Här i Flik 3):** Använd reglaget för att välja hur stor del av dessa pengar som ska in i bolagets **Kapitalförsäkring (KF)** för att växa till pensionen.
+        * **STEG 3 (Här i Flik 3):** Klicka på knappen **"📥 Skicka dessa värden direkt till Storstädningen"** längst ner. 
+        * **STEG 4 (I Flik 5):** Gå till flik *'⚙️ 5. Uppdatera data'*. Fälten för både *Bolagets Kassa i KF* och *Totalt Fritt Eget Kapital* är nu **färdigifyllda** åt dig! Du behöver bara kontrollera och klicka på **"Spara till Kalkylark"**.
+        """)
+
+    st.markdown("---")
+    st.markdown("### 🛠️ Interaktiv Bokslutsguide")
 
     col_b1, col_b2 = st.columns(2)
     with col_b1:
-        bok_fritt = st.number_input("1. Fritt Eget Kapital (Enligt Balansräkning)", min_value=0, value=int(totalt_fritt_start), step=10000)
-        bok_utdelning = st.number_input("2. Planerad Utdelning (Netto till dig privat)", min_value=0, value=200000, step=10000)
-        bok_skulder = st.number_input("3. Skatter & Skulder att betala (t.ex. moms, bolagsskatt)", min_value=0, value=50000, step=5000)
+        bok_fritt = st.number_input("1. Fritt Eget Kapital (Enligt Balansräkning)", min_value=0, value=int(totalt_fritt_start), step=10000, key="bok_fritt_inp")
+        bok_utdelning = st.number_input("2. Planerad Utdelning (Netto till dig privat)", min_value=0, value=200000, step=10000, key="bok_utd_inp")
+        bok_skulder = st.number_input("3. Skatter & Skulder att betala (t.ex. moms, bolagsskatt)", min_value=0, value=50000, step=5000, key="bok_skuld_inp")
     with col_b2:
-        # Beräkna faktiskt tillgängliga likvida medel
         beräknad_kassa_1930 = max(0, bok_fritt - bok_utdelning - bok_skulder)
         st.markdown("#### 📊 Resultat på Företagskontot (Konto 1930)")
         st.metric("Faktiskt tillgängliga likvida medel", f"{int(beräknad_kassa_1930):,} kr".replace(',', ' '), "Efter utdelning och skulder")
         
         st.markdown("---")
-        kf_andel_proc = st.slider("Hur stor del av dessa likvida medel vill du flytta till Kapitalförsäkring (KF)? (%)", min_value=0, max_value=100, value=80, step=5)
+        kf_andel_proc = st.slider("Hur stor del av dessa likvida medel vill du flytta till Kapitalförsäkring (KF)? (%)", min_value=0, max_value=100, value=80, step=5, key="kf_andel_slider")
 
-    # Fördela pottarna
     summa_till_kf = beräknad_kassa_1930 * (kf_andel_proc / 100)
     summa_kvar_pa_konto = beräknad_kassa_1930 - summa_till_kf
 
     st.markdown("---")
-    st.subheader("💡 Siffror att mata in vid din nästa storstädning (Flik 5):")
+    st.markdown("### 🎯 Spara till Flik 5 (Steg 3)")
+    
     col_res_a, col_res_b = st.columns(2)
     with col_res_a:
-        st.success(f"📈 **Bolagets Kassa i KF (Investerat):**\n### {int(summa_till_kf):,} kr".replace(',', ' '))
-        st.caption("Detta är beloppet du matar in i fältet *Bolagets Kassa i KF* under Flik 5 för att driva tillväxtprognosen.")
+        st.success(f"📈 **Bolagets Kassa i KF:** {int(summa_till_kf):,} kr".replace(',', ' '))
     with col_res_b:
-        st.info(f"🏦 **Likviditetsbuffert kvar på Konto 1930:**\n### {int(summa_kvar_pa_konto):,} kr".replace(',', ' '))
-        st.caption("Detta är det belopp som ligger kvar rent operativt på företagets vanliga bankkonto för löpande kostnader.")
+        st.info(f"🏦 **Totalt Fritt Eget Kapital:** {int(bok_fritt):,} kr".replace(',', ' '))
+
+    if st.button("📥 Skicka dessa värden direkt till Storstädningen (Flik 5)", type="primary"):
+        st.session_state['temp_kf'] = int(summa_till_kf)
+        st.session_state['temp_fritt'] = int(bok_fritt)
+        st.success("✅ Värdena har skickats till Flik 5! Gå nu till flik '⚙️ 5. Uppdatera data' för att slutföra sparandet.")
 
     st.markdown("---")
     st.markdown("### 🧮 Kalkylator 68+: K10-Utdelning vs Lön (7%-metoden)")
@@ -500,7 +520,15 @@ with tab5:
 
     st.markdown("---")
     st.markdown("### 📅 2. Den årliga storstädningen (Saldouppdatering)")
-    with st.expander("Öppna formulär för att spara nya aktuella saldon till databasen"):
+    
+    # --- TYDLIG INSTRUKTION ÄVEN HÄR ---
+    st.info("💡 **Tips (Steg 4 i guiden):** Om du först har gått till **Flik 3 (Företagaren)** och klickat på 'Skicka till Storstädningen', så är fälten för *Bolagets Kassa i KF* och *Totalt Fritt Eget Kapital* redan automatiskt förifyllda här nedanför!")
+
+    with st.expander("Öppna formulär för att spara nya aktuella saldon till databasen", expanded=True):
+        
+        default_kf_val = int(st.session_state.get('temp_kf', bolagets_kassa_start))
+        default_fritt_val = int(st.session_state.get('temp_fritt', totalt_fritt_start))
+        
         with st.form("update_form"):
             col_s1, col_s2, col_s3 = st.columns(3)
             with col_s1:
@@ -508,8 +536,8 @@ with tab5:
                 new_aktie = st.number_input("Aktiekonto", value=int(s_aktie_start), step=1000)
                 new_allman = st.number_input("Allmän Pension", value=int(allman_start), step=1000)
             with col_s2:
-                new_bolagskassa = st.number_input("Bolagets Kassa i KF (Investerat kapital)", value=int(bolagets_kassa_start), step=1000)
-                new_totalt_fritt = st.number_input("Totalt Fritt Eget Kapital (Bokfört)", value=int(totalt_fritt_start), step=1000)
+                new_bolagskassa = st.number_input("Bolagets Kassa i KF (Investerat kapital)", value=default_kf_val, step=1000)
+                new_totalt_fritt = st.number_input("Totalt Fritt Eget Kapital (Bokfört)", value=default_fritt_val, step=1000)
                 new_k10 = st.number_input("Sparat K10-utrymme", value=int(bolagets_k10_start), step=1000)
                 new_tjp = st.number_input("Tjänstepension", value=int(s_tjp_start), step=1000)
             with col_s3:
